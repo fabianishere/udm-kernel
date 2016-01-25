@@ -64,6 +64,7 @@
 #include <asm/psci.h>
 #include <asm/efi.h>
 #include <asm/virt.h>
+#include <asm/mmu_context.h>
 
 unsigned long elf_hwcap __read_mostly;
 EXPORT_SYMBOL_GPL(elf_hwcap);
