@@ -23,6 +23,7 @@
 
 #include <asm/assembler.h>
 #include <asm/kvm_asm.h>
+#include <asm/esr.h>
 #include <asm/ptrace.h>
 #include <asm/virt.h>
 
@@ -54,15 +55,30 @@ ENDPROC(__hyp_stub_vectors)
 	.align 11
 
 el1_sync:
-	mrs	x1, esr_el2
-	lsr	x1, x1, #26
-	cmp	x1, #0x16
+	mrs	x30, esr_el2
+	lsr	x30, x30, #ESR_ELx_EC_SHIFT
+
+	cmp	x30, #ESR_ELx_EC_HVC64
 	b.ne	2f				// Not an HVC trap
+
 	cbz	x0, 1f
 	msr	vbar_el2, x0			// Set vbar_el2
 	b	2f
+
 1:	mrs	x0, vbar_el2			// Return vbar_el2
-2:	eret
+
+2:	cmp	x0, #HVC_SOFT_RESTART
+	b.ne	3f
+	mov	x0, x2
+	mov	x2, x4
+	mov	x4, x1
+	mov	x1, x3
+	br	x4				// no return
+
+	/* Someone called kvm_call_hyp() against the hyp-stub... */
+3:	mov	x0, #ARM_EXCEPTION_HYP_GONE
+
+9:	eret
 ENDPROC(el1_sync)
 
 .macro invalid_vector	label
