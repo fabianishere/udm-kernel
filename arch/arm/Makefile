@@ -30,6 +30,12 @@ KBUILD_CFLAGS	+= $(call cc-option,-fno-dwarf2-cfi-asm)
 # Select a platform tht is kept up-to-date
 KBUILD_DEFCONFIG := versatile_defconfig
 
+
+ifeq ($(CONFIG_FUNC_REORDER),y)
+KBUILD_CFLAGS		+= -ffunction-sections
+endif
+
+
 # defines filename extension depending memory management type.
 ifeq ($(CONFIG_MMU),)
 MMUEXT		:= -nommu

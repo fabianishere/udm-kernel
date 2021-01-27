@@ -49,8 +49,8 @@ static inline void atomic_##op(int i, atomic_t *v)			\
 {									\
 	unsigned long tmp;						\
 	int result;							\
-									\
 	asm volatile("// atomic_" #op "\n"				\
+"	prfm	pstl1strm, %2\n"					\
 "1:	ldxr	%w0, %2\n"						\
 "	" #asm_op "	%w0, %w0, %w3\n"				\
 "	stxr	%w1, %w0, %2\n"						\
@@ -64,8 +64,8 @@ static inline int atomic_##op##_return(int i, atomic_t *v)		\
 {									\
 	unsigned long tmp;						\
 	int result;							\
-									\
 	asm volatile("// atomic_" #op "_return\n"			\
+"	prfm	pstl1strm, %2\n"					\
 "1:	ldxr	%w0, %2\n"						\
 "	" #asm_op "	%w0, %w0, %w3\n"				\
 "	stlxr	%w1, %w0, %2\n"						\
@@ -95,8 +95,8 @@ static inline int atomic_cmpxchg(atomic_t *ptr, int old, int new)
 	int oldval;
 
 	smp_mb();
-
 	asm volatile("// atomic_cmpxchg\n"
+"	prfm	pstl1strm, %2\n"
 "1:	ldxr	%w1, %2\n"
 "	cmp	%w1, %w3\n"
 "	b.ne	2f\n"
@@ -147,8 +147,8 @@ static inline void atomic64_##op(long i, atomic64_t *v)			\
 {									\
 	long result;							\
 	unsigned long tmp;						\
-									\
 	asm volatile("// atomic64_" #op "\n"				\
+"	prfm	pstl1strm, %2\n"					\
 "1:	ldxr	%0, %2\n"						\
 "	" #asm_op "	%0, %0, %3\n"					\
 "	stxr	%w1, %0, %2\n"						\
@@ -162,8 +162,8 @@ static inline long atomic64_##op##_return(long i, atomic64_t *v)	\
 {									\
 	long result;							\
 	unsigned long tmp;						\
-									\
 	asm volatile("// atomic64_" #op "_return\n"			\
+"	prfm	pstl1strm, %2\n"					\
 "1:	ldxr	%0, %2\n"						\
 "	" #asm_op "	%0, %0, %3\n"					\
 "	stlxr	%w1, %0, %2\n"						\
@@ -193,8 +193,8 @@ static inline long atomic64_cmpxchg(atomic64_t *ptr, long old, long new)
 	unsigned long res;
 
 	smp_mb();
-
 	asm volatile("// atomic64_cmpxchg\n"
+"	prfm	pstl1strm, %2\n"
 "1:	ldxr	%1, %2\n"
 "	cmp	%1, %3\n"
 "	b.ne	2f\n"
@@ -215,8 +215,8 @@ static inline long atomic64_dec_if_positive(atomic64_t *v)
 {
 	long result;
 	unsigned long tmp;
-
 	asm volatile("// atomic64_dec_if_positive\n"
+"	prfm	pstl1strm, %2\n"
 "1:	ldxr	%0, %2\n"
 "	subs	%0, %0, #1\n"
 "	b.mi	2f\n"

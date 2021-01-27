@@ -1656,14 +1656,20 @@ static int alg_test_hash(const struct alg_test_desc *desc, const char *driver,
 static int alg_test_crc32c(const struct alg_test_desc *desc,
 			   const char *driver, u32 type, u32 mask)
 {
+#ifndef CONFIG_CRYPTO_DEV_AL_AHASH_CRC
 	struct crypto_shash *tfm;
 	u32 val;
+#endif
 	int err;
 
 	err = alg_test_hash(desc, driver, type, mask);
 	if (err)
 		goto out;
-
+/**
+ * Removed the part of CRC self-test that assumes CRC is implemented as SHASH
+ * since AL crypto driver implement it as AHASH
+ */
+#ifndef CONFIG_CRYPTO_DEV_AL_AHASH_CRC
 	tfm = crypto_alloc_shash(driver, type | CRYPTO_ALG_INTERNAL, mask);
 	if (IS_ERR(tfm)) {
 		printk(KERN_ERR "alg: crc32c: Failed to load transform for %s: "
@@ -1695,7 +1701,7 @@ static int alg_test_crc32c(const struct alg_test_desc *desc,
 	} while (0);
 
 	crypto_free_shash(tfm);
-
+#endif
 out:
 	return err;
 }

@@ -303,6 +303,13 @@ static struct ctl_table net_core_table[] = {
 		.proc_handler	= proc_dointvec
 	},
 	{
+		.procname	= "hh_output_relaxed",
+		.data		= &hh_output_relaxed,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec
+	},
+	{
 		.procname	= "message_cost",
 		.data		= &net_ratelimit_state.interval,
 		.maxlen		= sizeof(int),
@@ -331,6 +338,13 @@ static struct ctl_table net_core_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &zero,
 		.extra2		= &one
+	},
+	{
+		.procname	= "netdev_skb_tstamp",
+		.data		= &netdev_skb_tstamp,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec
 	},
 #ifdef CONFIG_RPS
 	{

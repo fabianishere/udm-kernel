@@ -166,5 +166,22 @@ config POWER_RESET_RMOBILE
 	help
 	  Reboot support for Renesas R-Mobile and SH-Mobile SoCs.
 
+config POWER_RESET_ALPINE
+	bool "Annapurna Labs Alpine reset driver"
+	depends on ARCH_ALPINE
+	depends on OF
+	help
+	  Reboot support for Annpurna Labs boards.
+
+config POWER_RESET_ALPINE_POFF_AVERT_WDT
+	bool "Annapurna Labs Alpine stop wdt on power off"
+	depends on POWER_RESET_ALPINE
+	depends on WATCHDOG_NOWAYOUT
+	default y
+	help
+	  Poweroff doesn't kill the power and if the WDT is running with
+	  nowayout, then it will reset the CPU. Enable this option to stop
+	  watchdog on poweroff.
+
 endif
 

@@ -52,6 +52,7 @@ struct seq_file;
 struct workqueue_struct;
 struct iov_iter;
 struct vm_fault;
+struct socket;
 
 extern void __init inode_init(void);
 extern void __init inode_init_early(void);
@@ -1612,6 +1613,8 @@ struct file_operations {
 	int (*flock) (struct file *, int, struct file_lock *);
 	ssize_t (*splice_write)(struct pipe_inode_info *, struct file *, loff_t *, size_t, unsigned int);
 	ssize_t (*splice_read)(struct file *, loff_t *, struct pipe_inode_info *, size_t, unsigned int);
+	ssize_t (*splice_from_socket)(struct file *file, struct socket *sock,
+					loff_t __user *ppos, size_t count);
 	int (*setlease)(struct file *, long, struct file_lock **, void **);
 	long (*fallocate)(struct file *file, int mode, loff_t offset,
 			  loff_t len);

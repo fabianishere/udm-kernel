@@ -515,6 +515,12 @@ static int spi_nor_unlock(struct mtd_info *mtd, loff_t ofs, uint64_t len)
  * have been converging on command sets which including JEDEC ID.
  */
 static const struct spi_device_id spi_nor_ids[] = {
+	/* spi_flash_jedec_detection --
+	 *   using this configuration means the user is counting on this driver
+	 *   to perform memory device detection automatically (using jedec
+	 *   probe).
+	 */
+	{ "spi_flash_jedec_detection", INFO(0xD373C7, 0, 0, 0, 0) },
 	/* Atmel -- some are (confusingly) marketed as "DataFlash" */
 	{ "at25fs010",  INFO(0x1f6601, 0, 32 * 1024,   4, SECT_4K) },
 	{ "at25fs040",  INFO(0x1f6604, 0, 64 * 1024,   8, SECT_4K) },
@@ -567,6 +573,8 @@ static const struct spi_device_id spi_nor_ids[] = {
 	{ "mx25l1606e",  INFO(0xc22015, 0, 64 * 1024,  32, SECT_4K) },
 	{ "mx25l3205d",  INFO(0xc22016, 0, 64 * 1024,  64, 0) },
 	{ "mx25l3255e",  INFO(0xc29e16, 0, 64 * 1024,  64, SECT_4K) },
+	{ "mx25u25635f", INFO(0xc22539, 0, 64 * 1024, 512, SECT_4K) },
+	{ "mx25u12835f", INFO(0xc22538, 0, 64 * 1024, 256, 0) },
 	{ "mx25l6405d",  INFO(0xc22017, 0, 64 * 1024, 128, 0) },
 	{ "mx25u6435f",  INFO(0xc22537, 0, 64 * 1024, 128, SECT_4K) },
 	{ "mx25l12805d", INFO(0xc22018, 0, 64 * 1024, 256, 0) },
@@ -1058,6 +1066,7 @@ int spi_nor_scan(struct spi_nor *nor, const char *name, enum read_mode mode)
 	mtd->writesize = 1;
 	mtd->flags = MTD_CAP_NORFLASH;
 	mtd->size = info->sector_size * info->n_sectors;
+	mtd->jedec_id = (info->id[0] << 16) | (info->id[1] << 8) | (info->id[2]);
 	mtd->_erase = spi_nor_erase;
 	mtd->_read = spi_nor_read;
 

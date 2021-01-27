@@ -773,13 +773,13 @@ int afs_vnode_store_data(struct afs_writeback *wb, pgoff_t first, pgoff_t last,
 	struct afs_vnode *vnode = wb->vnode;
 	int ret;
 
-	_enter("%s{%x:%u.%u},%x,%lx,%lx,%x,%x",
+	_enter("%s{%x:%u.%u},%x,%llx,%llx,%x,%x",
 	       vnode->volume->vlocation->vldb.name,
 	       vnode->fid.vid,
 	       vnode->fid.vnode,
 	       vnode->fid.unique,
 	       key_serial(wb->key),
-	       first, last, offset, to);
+	       (unsigned long long)first, (unsigned long long)last, offset, to);
 
 	/* this op will fetch the status */
 	spin_lock(&vnode->lock);

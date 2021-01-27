@@ -3,10 +3,17 @@ config ARCH_ALPINE
 	select ARM_AMBA
 	select ARM_GIC
 	select GENERIC_IRQ_CHIP
+	select GENERIC_MSI_IRQ_DOMAIN
 	select HAVE_ARM_ARCH_TIMER
 	select HAVE_SMP
+	select IRQ_DOMAIN_HIERARCHY
 	select MFD_SYSCON
 	select PCI
-	select PCI_HOST_GENERIC
+	select PCI_DOMAINS
+	select PCI_MSI
+	select PCI_MSI_IRQ_DOMAIN
+	select POWER_RESET_ALPINE
+	select ARCH_DMA_ADDR_T_64BIT if ARM_LPAE
+	select ARCH_LONG_LONG_ATOMIC
 	help
 	  This enables support for the Annapurna Labs Alpine V1 boards.

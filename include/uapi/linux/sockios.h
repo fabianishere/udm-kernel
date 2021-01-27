@@ -129,6 +129,8 @@
 #define SIOCGHWTSTAMP	0x89b1		/* get config			*/
 
 /* Device private ioctl calls */
+#define SIOMDIOWRITE	0x89c0		/* RTL83xx MDIO write */
+#define SIOMDIOREAD 	0x89c1		/* RTL83xx MDIO read */
 
 /*
  *	These 16 ioctls are available to devices via the do_ioctl() device
@@ -139,7 +141,8 @@
  *	THESE IOCTLS ARE _DEPRECATED_ AND WILL DISAPPEAR IN 2.5.X -DaveM
  */
  
-#define SIOCDEVPRIVATE	0x89F0	/* to 89FF */
+#define SIOCDEVPRIVATE		0x89F0	/* UBNT - to 8AFF */
+#define SIOCDEVPRIVATE_LEN	0x10F
 
 /*
  *	These 16 ioctl calls are protocol private

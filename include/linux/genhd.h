@@ -113,6 +113,7 @@ struct hd_struct {
 	struct device __dev;
 	struct kobject *holder_dir;
 	int policy, partno;
+	int ubnt_readonly;
 	struct partition_meta_info *info;
 #ifdef CONFIG_FAIL_MAKE_REQUEST
 	int make_it_fail;
@@ -190,6 +191,7 @@ struct gendisk {
 	void *private_data;
 
 	int flags;
+	int ubnt_readonly;
 	struct device *driverfs_dev;  // FIXME: remove
 	struct kobject *slave_dir;
 
@@ -416,6 +418,22 @@ static inline void free_part_info(struct hd_struct *part)
 extern void part_round_stats(int cpu, struct hd_struct *part);
 
 /* block/genhd.c */
+typedef void (*gendisk_callback)(struct gendisk *disk, struct hd_struct *part, void * priv);
+extern void gendisk_callback_for_each(gendisk_callback cb, void *priv);
+extern int gendisk_event_hook_reg(gendisk_callback cb, void *priv, unsigned disk_event);
+extern void gendisk_event_hook_unreg(gendisk_callback cb, unsigned disk_event);
+#define DISK_EVENTS(EVENT) \
+		EVENT(DISK_EVENT_ADD)
+
+enum {
+#define EVENT(_ename) _ename,
+	DISK_EVENTS(EVENT)
+#undef EVENT
+	DISK_EVENT_COUNT
+};
+extern void ubnt_set_part_ro(struct gendisk *disk, int partno, int flag);
+extern void ubnt_set_disk_ro(struct gendisk *disk, int flag);
+
 extern void add_disk(struct gendisk *disk);
 extern void del_gendisk(struct gendisk *gp);
 extern struct gendisk *get_gendisk(dev_t dev, int *partno);

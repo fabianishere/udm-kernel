@@ -2809,6 +2809,8 @@ void neigh_app_ns(struct neighbour *n)
 }
 EXPORT_SYMBOL(neigh_app_ns);
 
+int hh_output_relaxed __read_mostly = 0;
+
 #ifdef CONFIG_SYSCTL
 static int zero;
 static int int_max = INT_MAX;

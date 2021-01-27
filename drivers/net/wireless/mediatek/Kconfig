@@ -1,0 +1,105 @@
+menuconfig WL_MEDIATEK
+	bool "Mediatek Wireless LAN support"
+	---help---
+	  Enable community drivers for MediaTek WiFi devices.
+	  Those drivers make use of the Linux mac80211 stack.
+
+
+if WL_MEDIATEK
+
+menuconfig WIFI_DRIVER
+	bool "WiFi Driver Support"
+
+if WIFI_DRIVER
+
+choice
+	prompt "Choose First WiFi Interface"
+	config FIRST_IF_NONE
+	bool "None"
+
+	config FIRST_IF_MT7603E
+	bool "MT7603E"
+	select MT_MAC
+	select RALINK_MT7603E
+
+	config FIRST_IF_MT7615E
+	bool "MT7615E"
+	select MT_MAC
+	select CHIP_MT7615E
+
+endchoice
+
+choice
+	prompt "Choose Second WiFi Interface"
+	config SECOND_IF_NONE
+	bool "None"
+
+	config SECOND_IF_MT7603E
+	bool "MT7603E"
+	select MT_MAC
+	select RALINK_MT7603E
+
+	config SECOND_IF_MT7615E
+	bool "MT7615E"
+	select MT_MAC
+	select CHIP_MT7615E
+
+endchoice
+
+choice
+	prompt "Choose Third WiFi Interface"
+	config THIRD_IF_NONE
+	bool "None"
+
+	config THIRD_IF_MT7603E
+	bool "MT7603E"
+	select MT_MAC
+	select RALINK_MT7603E
+
+	config THIRD_IF_MT7615E
+	bool "MT7615E"
+	select MT_MAC
+	select CHIP_MT7615E
+
+endchoice
+
+config  RT_FIRST_CARD
+	string
+	depends on ! FIRST_IF_NONE
+	default 7603e if FIRST_IF_MT7603E
+	default 7615e if FIRST_IF_MT7615
+
+config  RT_FIRST_IF_RF_OFFSET
+	hex
+	depends on ! FIRST_IF_NONE
+	default 0x0
+
+config  RT_SECOND_IF_RF_OFFSET
+	hex
+	depends on ! SECOND_IF_NONE
+	default 0x8000
+
+config  RT_THIRD_IF_RF_OFFSET
+	hex
+	depends on ! THIRD_IF_NONE
+	default 0x4000
+
+config  RT_SECOND_CARD
+	string
+	depends on ! SECOND_IF_NONE
+	default 7603e if SECOND_IF_MT7603E
+	default 7615e if SECOND_IF_MT7615E
+
+config  RT_THIRD_CARD
+	string
+	depends on ! THIRD_IF_NONE
+	default 7603e if THIRD_IF_MT7603E
+	default 7615e if THIRD_IF_MT7615E
+
+source "drivers/net/wireless/mediatek/rlt_wifi/Kconfig"
+source "drivers/net/wireless/mediatek/mt_wifi/embedded/Kconfig"
+endif # WIFI_DRIVER
+endif # WL_MEDIATEK
+
+
+

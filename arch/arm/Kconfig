@@ -183,6 +183,10 @@ config ARCH_HAS_ILOG2_U32
 config ARCH_HAS_ILOG2_U64
 	bool
 
+config ARCH_LONG_LONG_ATOMIC
+	bool
+	default n
+
 config ARCH_HAS_BANDGAP
 	bool
 
@@ -1442,6 +1446,16 @@ choice
 	config VMSPLIT_1G
 		bool "1G/3G user/kernel split"
 endchoice
+
+config FUNC_REORDER
+        bool "Function reordering support"
+        default n
+        help
+          Support for function reordering based on functionlist found in
+          arch/arm/kernel/functionlist.
+          Function reordering can be used to increase locality on the I-cache.
+          This option add the flag -ffunction-sections to the compilation
+          flags.
 
 config PAGE_OFFSET
 	hex

@@ -1795,9 +1795,9 @@ void vma_interval_tree_insert_after(struct vm_area_struct *node,
 void vma_interval_tree_remove(struct vm_area_struct *node,
 			      struct rb_root *root);
 struct vm_area_struct *vma_interval_tree_iter_first(struct rb_root *root,
-				unsigned long start, unsigned long last);
+				 pgoff_t start, pgoff_t last);
 struct vm_area_struct *vma_interval_tree_iter_next(struct vm_area_struct *node,
-				unsigned long start, unsigned long last);
+				pgoff_t start, pgoff_t last);
 
 #define vma_interval_tree_foreach(vma, root, start, last)		\
 	for (vma = vma_interval_tree_iter_first(root, start, last);	\
@@ -1808,9 +1808,9 @@ void anon_vma_interval_tree_insert(struct anon_vma_chain *node,
 void anon_vma_interval_tree_remove(struct anon_vma_chain *node,
 				   struct rb_root *root);
 struct anon_vma_chain *anon_vma_interval_tree_iter_first(
-	struct rb_root *root, unsigned long start, unsigned long last);
+	struct rb_root *root, pgoff_t start, pgoff_t last);
 struct anon_vma_chain *anon_vma_interval_tree_iter_next(
-	struct anon_vma_chain *node, unsigned long start, unsigned long last);
+	struct anon_vma_chain *node, pgoff_t start, pgoff_t last);
 #ifdef CONFIG_DEBUG_VM_RB
 void anon_vma_interval_tree_verify(struct anon_vma_chain *node);
 #endif

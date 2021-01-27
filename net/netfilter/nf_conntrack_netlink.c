@@ -45,6 +45,7 @@
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <net/netfilter/nf_conntrack_timestamp.h>
 #include <net/netfilter/nf_conntrack_labels.h>
+#include <net/netfilter/nf_conntrack_dpi.h>
 #ifdef CONFIG_NF_NAT_NEEDED
 #include <net/netfilter/nf_nat_core.h>
 #include <net/netfilter/nf_nat_l4proto.h>
@@ -364,6 +365,49 @@ ctnetlink_dump_labels(struct sk_buff *skb, const struct nf_conn *ct)
 #define ctnetlink_label_size(a)	(0)
 #endif
 
+#ifdef CONFIG_NF_CONNTRACK_DPI
+static inline int
+ctnetlink_dump_dpi(struct sk_buff *skb, const struct nf_conn *ct)
+{
+	struct nlattr *nest_count;
+	struct nf_conn_dpi *dpi = nfct_dpi(ct);
+	if (!dpi)
+		return 0;
+
+	nest_count = nla_nest_start(skb, CTA_DPI | NLA_F_NESTED);
+	if (!nest_count)
+		goto nla_put_failure;
+
+	if (nla_put_u8(skb, CTA_DPI_PROTO, dpi->ubnt_proto))
+		goto nla_put_failure;
+	if (dpi->dns) {
+		if (nla_put_u8(skb, CTA_DPI_DNS_LEN, dpi->dns_len))
+			goto nla_put_failure;
+		if (nla_put(skb, CTA_DPI_DNS, dpi->dns_len, dpi->dns))
+			goto nla_put_failure;
+		kfree(dpi->dns);
+		dpi->dns = NULL;
+	}
+	if (dpi->domain_name) {
+		if (nla_put_u8(skb, CTA_DPI_DOMAIN_NAME_LEN, dpi->domain_name_len))
+			goto nla_put_failure;
+		if (nla_put(skb, CTA_DPI_DOMAIN_NAME, dpi->domain_name_len, dpi->domain_name))
+			goto nla_put_failure;
+		kfree(dpi->domain_name);
+		dpi->domain_name = NULL;
+	}
+
+	nla_nest_end(skb, nest_count);
+
+	return 0;
+
+nla_put_failure:
+	return -1;
+}
+#else
+#define ctnetlink_dump_dpi(a, b) (0)
+#endif
+
 #define master_tuple(ct) &(ct->master->tuplehash[IP_CT_DIR_ORIGINAL].tuple)
 
 static inline int
@@ -500,6 +544,7 @@ ctnetlink_fill_info(struct sk_buff *skb, u32 portid, u32 seq, u32 type,
 	    ctnetlink_dump_mark(skb, ct) < 0 ||
 	    ctnetlink_dump_secctx(skb, ct) < 0 ||
 	    ctnetlink_dump_labels(skb, ct) < 0 ||
+	    ctnetlink_dump_dpi(skb, ct) < 0 ||
 	    ctnetlink_dump_id(skb, ct) < 0 ||
 	    ctnetlink_dump_use(skb, ct) < 0 ||
 	    ctnetlink_dump_master(skb, ct) < 0 ||

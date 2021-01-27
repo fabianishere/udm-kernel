@@ -1152,8 +1152,8 @@ DECLARE_EVENT_CLASS(xfs_page_class,
 		__entry->delalloc = delalloc;
 		__entry->unwritten = unwritten;
 	),
-	TP_printk("dev %d:%d ino 0x%llx pgoff 0x%lx size 0x%llx offset %lx "
-		  "length %x delalloc %d unwritten %d",
+	TP_printk("dev %d:%d ino 0x%llx pgoff 0x%llx size 0x%llx offset %lx "
+		  "delalloc %d unwritten %d",
 		  MAJOR(__entry->dev), MINOR(__entry->dev),
 		  __entry->ino,
 		  __entry->pgoff,

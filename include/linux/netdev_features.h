@@ -67,7 +67,7 @@ enum {
 	NETIF_F_HW_L2FW_DOFFLOAD_BIT,	/* Allow L2 Forwarding in Hardware */
 	NETIF_F_BUSY_POLL_BIT,		/* Busy poll */
 	NETIF_F_HW_SWITCH_OFFLOAD_BIT,  /* HW switch offload */
-
+	NETIF_F_MQ_TX_LOCK_OPT_BIT,	/* Supports mq tx lock optimization */
 	/*
 	 * Add your fresh new feature above and remember to update
 	 * netdev_features_strings[] in net/core/ethtool.c and maybe
@@ -126,6 +126,7 @@ enum {
 #define NETIF_F_HW_L2FW_DOFFLOAD	__NETIF_F(HW_L2FW_DOFFLOAD)
 #define NETIF_F_BUSY_POLL	__NETIF_F(BUSY_POLL)
 #define NETIF_F_HW_SWITCH_OFFLOAD	__NETIF_F(HW_SWITCH_OFFLOAD)
+#define NETIF_F_MQ_TX_LOCK_OPT	__NETIF_F(MQ_TX_LOCK_OPT)
 
 /* Features valid for ethtool to change */
 /* = all defined minus driver/device-class-related */

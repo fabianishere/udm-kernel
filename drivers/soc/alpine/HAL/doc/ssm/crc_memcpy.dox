@@ -1,0 +1,66 @@
+/**
+ * @defgroup group_crc_memcpy crc_memcpy
+ * crc/memcpy Acceleration Engine HAL driver.
+ *
+ * For documentation see @ref group_crc_memcpy_doc section.\n
+ * For API reference see @ref group_crc_memcpy_api section.\n
+ *
+ * @defgroup group_crc_memcpy_doc Documentation
+ * @ingroup group_crc_memcpy
+ * @{
+ * @page crcmemcpydoc
+ * @ref crc_memcpy_overview\n
+ * @ref crc_memcpy_flows
+ * @section crc_memcpy_overview Overview
+ * The crc_memcpy acceleration engine contains the following components:
+ * -# High performance Universal DMA (a pair of M2S and S2M)
+ * -# CRC / checksum / memcpy engine
+ *
+ * A requested operation is inserted into the M2S UDMA by adding submission
+ * descriptors to the submission ring of the M2S UDMA. The descriptors
+ * contain the operation type and pointers to the different source buffers
+ * (IV,  SA, Signature, SRC etc.).
+ * The M2S UDMA fetches those descriptors along with the source buffers data
+ * from system memory and transfers it to the application layer.
+ * The application layer, in turn, generates the output data according to
+ * the request type and streams this data to S2M UDMA. The S2M UDMA fetches a
+ * descriptor from it's submission ring and according to its contents knows
+ * where to write the data that it receives from the application layer.
+ * Once the data stream of the operation done, The S2M UDMA finishes the
+ * request by writing descriptors to the completion ring. The S2M UDMA writes
+ * completion descriptor for each descriptor it fetched from the S2M
+ * submission ring.
+ *
+ * The crc_memcpy accelerator offers the following set of features:
+ * - CRC and Checksum calculation
+ * - memcpy operation
+ *
+ * @section crc_memcpy_flows Software Flows
+ * @subsection init Initialization
+ * - Initialization is done with SSM common HAL API. see @ref group_ssm_api
+ *
+ * @subsection crc_memcpy_transactions Transactions
+ * The transaction describes a HW operation request.
+ * There are two types of transactions supported by the crc_memcpy driver:
+ * - memcpy: al_memcpy_transaction
+ * - CRC/Checksum: al_crc_transaction
+ *
+ * @subsubsection xactionscrc CRC/Checksum Transactions
+ * CRC and checksum operation parameters include only:
+ * - Operation type
+ * - Source buffer scatter gathered list
+ * - Destination buffer for calculated CRC/Checksum
+ *
+ * @subsubsection cryptoxactionscmpl Completing Transactions
+ * When the upper layer decides to check for completed transaction (e.g. due to
+ * interrupt) it calls al_crc_memcpy_dma_completion() API.
+ * al_crc_memcpy_dma_completion() is responsible for the cleanup of the
+ * completed request from the completion ring, so upper layer doesn't need to
+ * worry about the queues management.
+ * This driver doesn't tell the upper layer which transaction is completed, the
+ * upper layer should find this information by itself relying on the fact that
+ * for a given queue, the transactions are completed in the same order they were
+ * submitted. No ordering is guaranteed between transactions that are submitted
+ * to different queues.
+ * @}
+ */

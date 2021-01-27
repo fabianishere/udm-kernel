@@ -1067,6 +1067,9 @@ hc_init:
 
 static void quirk_usb_early_handoff(struct pci_dev *pdev)
 {
+#ifdef CONFIG_ARCH_ALPINE
+	return;
+#endif
 	/* Skip Netlogic mips SoC's internal PCI USB controller.
 	 * This device does not need/support EHCI/OHCI handoff
 	 */

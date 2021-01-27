@@ -1,0 +1,223 @@
+/*
+ * Copyright 2017, Amazon.com, Inc. or its affiliates. All Rights Reserved
+ */
+
+#ifndef __AL_ERR_EVENTS_SSM_H__
+#define __AL_ERR_EVENTS_SSM_H__
+
+#include "al_err_events.h"
+
+/*******************************************************************************
+ ** Error ID's
+ ******************************************************************************/
+/*
+ * Crypto errors ID's
+ */
+enum al_err_events_ssm_crypto {
+	AL_ERR_EVENTS_SSM_CRYPTO_S2M_TIMEOUT = 0,
+	AL_ERR_EVENTS_SSM_CRYPTO_M2S_TIMEOUT,
+	AL_ERR_EVENTS_SSM_CRYPTO_EOP_WITHOUT_SOP_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_SOP_WITHOUT_EOP_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_SOP_WITH_EOP_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_UNMAP_PROTOCOL_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_SA_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_IV_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_ICV_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_DMB_FUNC_0_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_DMB_FUNC_1_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_DMB_FUNC_2_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_DMB_FUNC_3_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_E2M_PAYLOAD_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_E2M_SIGNATURE_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_D2E_DATA_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_D2E_CONTROL_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_INGRESS_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_ALIGNER_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_D2E_CONTEXT_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_D2E_HASH_STATE_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_D2E_OPAD_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_E2D_WB_SIGNATURE_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_E2M_INTR_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_D2E_GMAC_STATE_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_D2E_CMPRS_HIST_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_FIFO_OVERRUN_D2E_HUFFMAN_D_TBL_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_SA_IV_FIFO_OUT_EMPTY_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_M2S_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_SAD_MEM_PARITY_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_SAD_AUTH_IV_IN_PAR_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_SAD_ENC_KEY_AUTH_IV_OUT_PAR_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_SAD_ENC_PARAMS_PAR_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_DECMPRS_PAR_ERROR_HIST0,
+	AL_ERR_EVENTS_SSM_CRYPTO_DECMPRS_PAR_ERROR_HIST1,
+	AL_ERR_EVENTS_SSM_CRYPTO_DECMPRS_PAR_ERROR_HIST2,
+	AL_ERR_EVENTS_SSM_CRYPTO_DECMPRS_PAR_ERROR_HIST3,
+	AL_ERR_EVENTS_SSM_CRYPTO_OUT_CONT_COMPRESSED_CMPRS_PAR_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_OUT_CONT_ORIG_CMPRS_PAR_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST0,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST1,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST2,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST3,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST4,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST5,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST6,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST7,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST8,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST9,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST10,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST11,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST12,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST13,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST14,
+	AL_ERR_EVENTS_SSM_CRYPTO_CMPRS_PAR_ERR_HIST15,
+	AL_ERR_EVENTS_SSM_CRYPTO_LZ77_LZSS_CAM_ENT_NOT_FOUND_CMPRS_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_LZ77_LZSS_INVALID_ALU_CMD_CMPRS_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_HIST_EXCEEDED_CMPRS_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_INVALID_FIELD_COMP_DECMPRS_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_INVALID_FIELD_SIZE_DECMPRS_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_OFFSET_NOT_RESOLVED_DECMPRS_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_ZERO_CODE_WORD_CNT_DECMPRS_ERROR,
+	AL_ERR_EVENTS_SSM_CRYPTO_MAX_ERRORS,
+};
+
+/*
+ * Raid errors ID's
+ */
+enum al_err_events_ssm_raid {
+	AL_ERR_EVENTS_SSM_RAID_S2M_TIMEOUT = 0,
+	AL_ERR_EVENTS_SSM_RAID_M2S_TIMEOUT,
+	AL_ERR_EVENTS_SSM_RAID_CMD_DECODE_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_INPUT_LENGTH_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_MEMORY_COMPARE_SET_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_MAX_LENGTH_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_MEMORY_STAGE_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_M2S_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_FIFO_ACK_ERROR_0,
+	AL_ERR_EVENTS_SSM_RAID_FIFO_ACK_ERROR_1,
+	AL_ERR_EVENTS_SSM_RAID_FIFO_ACK_ERROR_2,
+	AL_ERR_EVENTS_SSM_RAID_FIFO_ACK_ERROR_3,
+	AL_ERR_EVENTS_SSM_RAID_FIFO_QUEUE_OVERRUN_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_SOP_AFTER_EOP_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_NO_SOP_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_SOP_WITH_EOP_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_EOP_AFTER_EOP_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_MEM1_ODD_PARITY_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_MEM1_EVEN_PARITY_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_MEM2_ODD_PARITY_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_MEM2_EVEN_PARITY_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_MEM3_ODD_PARITY_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_MEM3_EVEN_PARITY_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_MEM4_ODD_PARITY_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_MEM4_EVEN_PARITY_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_ERASURE_CODE_FIFO_Q_OVERRUN_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_ERASURE_CODE_FIFO_R_OVERRUN_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_ERASURE_CODE_FIFO_S_OVERRUN_ERROR,
+	AL_ERR_EVENTS_SSM_RAID_MAX_ERRORS,
+};
+
+/*
+ * CRC errors ID's
+ */
+enum al_err_events_ssm_crc {
+	AL_ERR_EVENTS_SSM_CRC_S2M_TIMEOUT = 0,
+	AL_ERR_EVENTS_SSM_CRC_M2S_TIMEOUT,
+	AL_ERR_EVENTS_SSM_CRC_CMD_DECODE_ERROR,
+	AL_ERR_EVENTS_SSM_CRC_INPUT_LENGTH_ERROR,
+	AL_ERR_EVENTS_SSM_CRC_MEMORY_COMPARE_SET_ERROR,
+	AL_ERR_EVENTS_SSM_CRC_MAX_LENGTH_ERROR,
+	AL_ERR_EVENTS_SSM_CRC_M2S_ERROR,
+	AL_ERR_EVENTS_SSM_CRC_FIFO_ACK_ERROR_0,
+	AL_ERR_EVENTS_SSM_CRC_FIFO_ACK_ERROR_1,
+	AL_ERR_EVENTS_SSM_CRC_FIFO_ACK_ERROR_2,
+	AL_ERR_EVENTS_SSM_CRC_FIFO_ACK_ERROR_3,
+	AL_ERR_EVENTS_SSM_CRC_FIFO_QUEUE_OVERRUN_ERROR,
+	AL_ERR_EVENTS_SSM_CRC_SOP_AFTER_EOP_ERROR,
+	AL_ERR_EVENTS_SSM_CRC_NO_SOP_ERROR,
+	AL_ERR_EVENTS_SSM_CRC_SOP_WITH_EOP_ERROR,
+	AL_ERR_EVENTS_SSM_CRC_EOP_AFTER_EOP_ERROR,
+	AL_ERR_EVENTS_SSM_CRC_MAX_ERRORS,
+};
+
+/*******************************************************************************
+ ** Init params
+ ******************************************************************************/
+struct al_err_events_ssm_app_init_params {
+	/** Application regs base address */
+	void __iomem *app_regs_base;
+
+	/* SSM index */
+	unsigned int ssm_idx;
+
+	/** module secondary index number */
+	unsigned int secondary_index;
+
+	/** PCI adapter revision ID */
+	uint8_t rev_id;
+
+	/** collection mode */
+	enum al_err_events_collect collect_mode;
+};
+
+/*******************************************************************************
+ ** Error Data structures
+ ******************************************************************************/
+struct al_err_events_ssm_crypto_data {
+	struct al_err_events_module module;
+
+	struct al_err_events_field fields[AL_ERR_EVENTS_SSM_CRYPTO_MAX_ERRORS];
+};
+
+struct al_err_events_ssm_raid_data {
+	struct al_err_events_module module;
+
+	struct al_err_events_field fields[AL_ERR_EVENTS_SSM_RAID_MAX_ERRORS];
+};
+
+struct al_err_events_ssm_crc_data {
+	struct al_err_events_module module;
+
+	struct al_err_events_field fields[AL_ERR_EVENTS_SSM_CRC_MAX_ERRORS];
+};
+
+/*******************************************************************************
+ ** API
+ ******************************************************************************/
+/*
+ * Initialize SSM Crypto error events
+ *
+ * @param handle Error events handle
+ * @param data SSM Crypto error events object
+ * @param params SSM Crypto initialization parameters
+ *
+ * @return 0 on success, errno otherwise
+ */
+int al_err_events_ssm_crypto_init(struct al_err_events_handle *handle,
+				  struct al_err_events_ssm_crypto_data *data,
+				  struct al_err_events_ssm_app_init_params *params);
+
+/*
+ * Initialize SSM Raid error events
+ *
+ * @param handle Error events handle
+ * @param data SSM Raid error events object
+ * @param params SSM Raid initialization parameters
+ *
+ * @return 0 on success, errno otherwise
+ */
+int al_err_events_ssm_raid_init(struct al_err_events_handle *handle,
+				struct al_err_events_ssm_raid_data *data,
+				struct al_err_events_ssm_app_init_params *params);
+
+/*
+ * Initialize SSM CRC error events
+ *
+ * @param handle Error events handle
+ * @param data SSM CRC error events object
+ * @param params SSM CRC initialization parameters
+ *
+ * @return 0 on success, errno otherwise
+ */
+int al_err_events_ssm_crc_init(struct al_err_events_handle *handle,
+			       struct al_err_events_ssm_crc_data *data,
+			       struct al_err_events_ssm_app_init_params *params);
+
+#endif /* __AL_ERR_EVENTS_SSM_H__ */

@@ -896,7 +896,7 @@ static long sock_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 	sock = file->private_data;
 	sk = sock->sk;
 	net = sock_net(sk);
-	if (cmd >= SIOCDEVPRIVATE && cmd <= (SIOCDEVPRIVATE + 15)) {
+	if (cmd >= SIOCDEVPRIVATE && cmd <= (SIOCDEVPRIVATE + SIOCDEVPRIVATE_LEN)) { // UBNT - extended SIOCDEVPRIVATE to 0x8aff for ubnt_ioctl.h
 		err = dev_ioctl(net, cmd, argp);
 	} else
 #ifdef CONFIG_WEXT_CORE
@@ -3057,7 +3057,7 @@ static int compat_sock_ioctl_trans(struct file *file, struct socket *sock,
 	struct sock *sk = sock->sk;
 	struct net *net = sock_net(sk);
 
-	if (cmd >= SIOCDEVPRIVATE && cmd <= (SIOCDEVPRIVATE + 15))
+	if (cmd >= SIOCDEVPRIVATE && cmd <= (SIOCDEVPRIVATE + SIOCDEVPRIVATE_LEN)) // UBNT - extended SIOCDEVPRIVATE to 0x8aff for ubnt_ioctl.h
 		return compat_ifr_data_ioctl(net, cmd, argp);
 
 	switch (cmd) {

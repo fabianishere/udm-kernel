@@ -2563,7 +2563,9 @@ static void hugetlb_vm_op_close(struct vm_area_struct *vma)
 	struct hstate *h = hstate_vma(vma);
 	struct resv_map *resv = vma_resv_map(vma);
 	struct hugepage_subpool *spool = subpool_vma(vma);
-	unsigned long reserve, start, end;
+	unsigned long reserve;
+	pgoff_t start;
+	pgoff_t end;
 	long gbl_reserve;
 
 	if (!resv || !is_vma_resv_set(vma, HPAGE_RESV_OWNER))
@@ -3090,7 +3092,7 @@ static int hugetlb_no_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	struct hstate *h = hstate_vma(vma);
 	int ret = VM_FAULT_SIGBUS;
 	int anon_rmap = 0;
-	unsigned long size;
+	loff_t size;
 	struct page *page;
 	pte_t new_pte;
 	spinlock_t *ptl;

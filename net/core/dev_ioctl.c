@@ -4,6 +4,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/net_tstamp.h>
 #include <linux/wireless.h>
+#include <linux/rtl83xx.h>
 #include <net/wext.h>
 
 /*
@@ -317,7 +318,7 @@ static int dev_ifsioc(struct net *net, struct ifreq *ifr, unsigned int cmd)
 	 */
 	default:
 		if ((cmd >= SIOCDEVPRIVATE &&
-		    cmd <= SIOCDEVPRIVATE + 15) ||
+		    cmd <= SIOCDEVPRIVATE + SIOCDEVPRIVATE_LEN) || // UBNT - extended SIOCDEVPRIVATE to 0x8aff for ubnt_ioctl.h
 		    cmd == SIOCBONDENSLAVE ||
 		    cmd == SIOCBONDRELEASE ||
 		    cmd == SIOCBONDSETHWADDR ||
@@ -344,6 +345,29 @@ static int dev_ifsioc(struct net *net, struct ifreq *ifr, unsigned int cmd)
 
 	}
 	return err;
+}
+
+int dev_rtl83xx(struct net *net, struct ifreq *ifr, unsigned int cmd)
+{
+	struct net_device *dev = __dev_get_by_name(net, ifr->ifr_name);
+	const struct rtl83xx_ops *ops = dev->rtl83xx_ops;
+	int rc = 0;
+
+	if (!dev || !netif_device_present(dev))
+		return -ENODEV;
+
+	if (ops->mdio_write && ops->mdio_read) {
+		if (cmd == SIOMDIOWRITE)
+			ops->mdio_write(dev, ifr);
+		else if (cmd == SIOMDIOREAD)
+			ops->mdio_read(dev, ifr);
+		else
+			rc = -ENODEV;
+	}
+	else
+		rc = -ENODEV;
+
+	return rc;
 }
 
 /**
@@ -465,6 +489,21 @@ int dev_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 		}
 		return ret;
 
+	case SIOMDIOWRITE:
+	case SIOMDIOREAD:
+		dev_load(net, ifr.ifr_name);
+		rtnl_lock();
+		ret = dev_rtl83xx(net, &ifr, cmd);
+		rtnl_unlock();
+		if (!ret) {
+			if (colon)
+				*colon = ':';
+			if (copy_to_user(arg, &ifr,
+					 sizeof(struct ifreq)))
+				ret = -EFAULT;
+		}
+		return ret;
+
 	/*
 	 *	These ioctl calls:
 	 *	- require superuser power.
@@ -549,7 +588,7 @@ int dev_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 		if (cmd == SIOCWANDEV ||
 		    cmd == SIOCGHWTSTAMP ||
 		    (cmd >= SIOCDEVPRIVATE &&
-		     cmd <= SIOCDEVPRIVATE + 15)) {
+		     cmd <= SIOCDEVPRIVATE + SIOCDEVPRIVATE_LEN)) { // UBNT - extended SIOCDEVPRIVATE to 0x8aff for ubnt_ioctl.h
 			dev_load(net, ifr.ifr_name);
 			rtnl_lock();
 			ret = dev_ifsioc(net, &ifr, cmd);

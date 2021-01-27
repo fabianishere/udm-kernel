@@ -10,6 +10,16 @@ config DCACHE_WORD_ACCESS
 
 if BLOCK
 
+config LFS_ON_32CPU
+	bool "Support for large (16TB+) filesystems on 32-bit cpu"
+	depends on LBDAF
+	depends on !HUGETLBFS #hugetlbfs not supported yet
+	default n
+	help
+	  Enable support of running filesystem on block devices that are larger
+	  than 16TB on 32bit cpus
+
+
 source "fs/ext2/Kconfig"
 source "fs/ext3/Kconfig"
 source "fs/ext4/Kconfig"

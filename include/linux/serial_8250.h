@@ -121,6 +121,9 @@ struct uart_8250_port {
 	/* 8250 specific callbacks */
 	int			(*dl_read)(struct uart_8250_port *);
 	void			(*dl_write)(struct uart_8250_port *, int);
+#ifdef CONFIG_AL_TRACE
+	bool			al_trace;
+#endif
 };
 
 static inline struct uart_8250_port *up_to_u8250p(struct uart_port *up)

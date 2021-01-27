@@ -31,7 +31,6 @@
  * http://www.intel.com/technology/serialata/pdf/rev1_1.pdf
  *
  */
-
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/pci.h>
@@ -42,10 +41,17 @@
 #include <linux/device.h>
 #include <linux/dmi.h>
 #include <linux/gfp.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_cmnd.h>
 #include <linux/libata.h>
 #include "ahci.h"
+#include "ahci_alpine.h"
+#ifdef CONFIG_ARCH_ALPINE
+#include "al_hal_iofic.h"
+#include "al_hal_iofic_regs.h"
+#endif
 
 #define DRV_NAME	"ahci"
 #define DRV_VERSION	"3.0"
@@ -66,6 +72,7 @@ enum board_ids {
 	board_ahci_yes_fbs,
 
 	/* board IDs for specific chipsets in alphabetical order */
+	board_ahci_alpine,
 	board_ahci_avn,
 	board_ahci_mcp65,
 	board_ahci_mcp77,
@@ -110,6 +117,13 @@ static struct ata_port_operations ahci_p5wdh_ops = {
 	.hardreset		= ahci_p5wdh_hardreset,
 };
 
+ssize_t al_ahci_transmit_led_message(struct ata_port *ap, u32 state,
+					    ssize_t size);
+
+static struct ata_port_operations ahci_al_ops = {
+	.inherits		= &ahci_ops,
+	.transmit_led_message   = al_ahci_transmit_led_message,
+};
 static struct ata_port_operations ahci_avn_ops = {
 	.inherits		= &ahci_ops,
 	.hardreset		= ahci_avn_hardreset,
@@ -159,6 +173,13 @@ static const struct ata_port_info ahci_port_info[] = {
 		.port_ops	= &ahci_ops,
 	},
 	/* by chipsets */
+	[board_ahci_alpine] = {
+		AHCI_HFLAGS	(AHCI_HFLAG_NO_PMP | AHCI_HFLAG_AL_MSIX | AHCI_HFLAG_MULTI_MSI),
+		.flags		= AHCI_FLAG_COMMON,
+		.pio_mask	= ATA_PIO4,
+		.udma_mask	= ATA_UDMA6,
+		.port_ops	= &ahci_al_ops,
+	},
 	[board_ahci_avn] = {
 		.flags		= AHCI_FLAG_COMMON,
 		.pio_mask	= ATA_PIO4,
@@ -406,6 +427,10 @@ static const struct pci_device_id ahci_pci_tbl[] = {
 	{ PCI_VDEVICE(ATI, 0x4394), board_ahci_sb700 }, /* ATI SB700/800 */
 	{ PCI_VDEVICE(ATI, 0x4395), board_ahci_sb700 }, /* ATI SB700/800 */
 
+#ifdef CONFIG_AHCI_ALPINE
+	/* Annapurna Labs */
+	{ PCI_VDEVICE(ANNAPURNA_LABS, 0x0031), board_ahci_alpine }, /* 0031 */
+#endif
 	/* AMD */
 	{ PCI_VDEVICE(AMD, 0x7800), board_ahci }, /* AMD Hudson-2 */
 	{ PCI_VDEVICE(AMD, 0x7900), board_ahci }, /* AMD CZ */
@@ -539,6 +564,8 @@ static const struct pci_device_id ahci_pci_tbl[] = {
 	  .driver_data = board_ahci_yes_fbs },
 	{ PCI_DEVICE(PCI_VENDOR_ID_TTI, 0x0642),
 	  .driver_data = board_ahci_yes_fbs },
+	{ PCI_DEVICE(PCI_VENDOR_ID_MARVELL_EXT, 0x9235),
+	  .driver_data = board_ahci_yes_fbs },			/* 88se9235 */
 
 	/* Promise */
 	{ PCI_VDEVICE(PROMISE, 0x3f20), board_ahci },	/* PDC42819 */
@@ -586,6 +613,17 @@ static int marvell_enable = 1;
 #endif
 module_param(marvell_enable, int, 0644);
 MODULE_PARM_DESC(marvell_enable, "Marvell SATA via AHCI (1 = enabled)");
+
+#ifdef CONFIG_ARCH_ALPINE
+int __read_mostly al_ahci_sss_enabled;
+EXPORT_SYMBOL_GPL(al_ahci_sss_enabled);
+
+module_param_named(alpine_sss, al_ahci_sss_enabled, int, 0444);
+MODULE_PARM_DESC(alpine_sss,
+	"Enabled staggered spinup flag for Alpine SoC(0=disable, 1=enable)");
+
+#endif
+
 
 
 static void ahci_pci_save_initial_config(struct pci_dev *pdev,
@@ -837,6 +875,11 @@ static int ahci_pci_device_resume(struct pci_dev *pdev)
 {
 	struct ata_host *host = pci_get_drvdata(pdev);
 	int rc;
+
+#ifdef CONFIG_AHCI_ALPINE
+	if (pdev->vendor == PCI_VENDOR_ID_ANNAPURNA_LABS && al_ahci_sss_enabled)
+		al_ahci_flr(pdev);
+#endif
 
 	rc = ata_pci_device_do_resume(pdev);
 	if (rc)
@@ -1335,6 +1378,7 @@ static inline void ahci_gtf_filter_workaround(struct ata_host *host)
 {}
 #endif
 
+
 static int ahci_init_interrupts(struct pci_dev *pdev, unsigned int n_ports,
 				struct ahci_host_priv *hpriv)
 {
@@ -1342,6 +1386,14 @@ static int ahci_init_interrupts(struct pci_dev *pdev, unsigned int n_ports,
 
 	if (hpriv->flags & AHCI_HFLAG_NO_MSI)
 		goto intx;
+
+	pr_debug("al pdev->vendor: %d anpa: %d\n", pdev->vendor, PCI_VENDOR_ID_ANNAPURNA_LABS);
+	if (pdev->vendor == PCI_VENDOR_ID_ANNAPURNA_LABS) {
+		nvec = al_init_msix_interrupts(pdev, n_ports, hpriv);
+		pr_debug("init msix interrupts returned: %d\n",nvec);
+		if (nvec > 0)
+			return nvec;
+	}
 
 	nvec = pci_msi_vec_count(pdev);
 	if (nvec < 0)
@@ -1391,6 +1443,9 @@ static int ahci_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct device *dev = &pdev->dev;
 	struct ahci_host_priv *hpriv;
 	struct ata_host *host;
+#ifdef CONFIG_ARCH_ALPINE
+	struct device_node	*np;
+#endif
 	int n_ports, i, rc;
 	int ahci_pci_bar = AHCI_PCI_BAR_STANDARD;
 
@@ -1423,6 +1478,11 @@ static int ahci_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 		ahci_pci_bar = AHCI_PCI_BAR_STA2X11;
 	else if (pdev->vendor == 0x1c44 && pdev->device == 0x8000)
 		ahci_pci_bar = AHCI_PCI_BAR_ENMOTUS;
+
+#ifdef CONFIG_AHCI_ALPINE
+	if (pdev->vendor == PCI_VENDOR_ID_ANNAPURNA_LABS && al_ahci_sss_enabled)
+		al_ahci_flr(pdev);
+#endif
 
 	/* acquire resources */
 	rc = pcim_enable_device(pdev);
@@ -1506,6 +1566,59 @@ static int ahci_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 		pi.flags |= ATA_FLAG_PMP;
 
 	ahci_set_em_messages(hpriv, &pi);
+
+#ifdef CONFIG_ARCH_ALPINE
+	for (i = 0; i < AHCI_MAX_PORTS; i++)
+		hpriv->led_gpio[i] = -1;
+
+	np = of_find_compatible_node(NULL, NULL, "annapurna-labs,al-sata-sw-leds");
+	if (np) {
+		int err;
+		struct device_node *child;
+		u32	domain;
+		u32	pci_bus;
+		u32	pci_dev;
+		u32	port;
+
+		for_each_child_of_node(np, child) {
+			err = of_property_read_u32(child, "pci_domain", &domain);
+			if (err)
+				continue;
+			if (domain != pci_domain_nr(pdev->bus))
+				continue;
+			err = of_property_read_u32(child, "pci_bus", &pci_bus);
+			if (err)
+				continue;
+			if (pci_bus != pdev->bus->number)
+				continue;
+			err = of_property_read_u32(child, "pci_dev", &pci_dev);
+			if (err)
+				continue;
+			if (pci_dev != PCI_SLOT(pdev->devfn))
+				continue;
+			err = of_property_read_u32(child, "port", &port);
+			if (err)
+				continue;
+			err = of_get_named_gpio(child, "gpios", 0);
+			if (IS_ERR_VALUE(err))
+				continue;
+
+			hpriv->led_gpio[port] = err;
+
+			err = gpio_request(hpriv->led_gpio[port], "sata led gpio");
+			if (err) {
+				dev_err(&pdev->dev, "al ahci gpio_request %d failed: %d\n",
+						hpriv->led_gpio[port], err);
+				continue;
+			}
+			gpio_direction_output(hpriv->led_gpio[port], 0);
+			hpriv->em_msg_type = EM_MSG_TYPE_LED;
+			pi.flags |= ATA_FLAG_EM | ATA_FLAG_SW_ACTIVITY;
+		}
+
+		of_node_put(np);
+	}
+#endif
 
 	if (ahci_broken_system_poweroff(pdev)) {
 		pi.flags |= ATA_FLAG_NO_POWEROFF_SPINDOWN;

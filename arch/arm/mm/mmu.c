@@ -685,7 +685,9 @@ static void __init *early_alloc(unsigned long sz)
 static pte_t * __init early_pte_alloc(pmd_t *pmd, unsigned long addr, unsigned long prot)
 {
 	if (pmd_none(*pmd)) {
-		pte_t *pte = early_alloc(PTE_HWTABLE_OFF + PTE_HWTABLE_SIZE);
+		pte_t *pte = early_alloc(max_t(size_t,
+					PTE_HWTABLE_OFF + PTE_HWTABLE_SIZE,
+					PAGE_SIZE));
 		__pmd_populate(pmd, __pa(pte), prot);
 	}
 	BUG_ON(pmd_bad(*pmd));
@@ -1211,6 +1213,30 @@ void __init arm_mm_memblock_reserve(void)
 #endif
 }
 
+#if defined(CONFIG_ARM_PAGE_SIZE_LARGE) && defined(CONFIG_HIGHMEM)
+/* Prepare all levels for mapping highmem pages except the pte.
+ * This function isn't needed if FIXADDR is inside the already-existing
+ * mapping 0xfff0000 - 0xffffffff
+ * */
+static void __init prepare_highmem_tables(void)
+{
+	struct map_desc map;
+	unsigned long addr;
+
+	for (addr = FIXADDR_START; addr < FIXADDR_END; addr += SECTION_SIZE) {
+		/* map the first page from each section */
+		map.pfn = __phys_to_pfn(virt_to_phys((void *)addr));
+		map.virtual = addr;
+		map.length = PAGE_SIZE;
+		map.type = MT_MEMORY_RWX;
+		create_mapping(&map);
+
+		/* remove pte. Other pagetable levels are ready */
+		set_fix_pte(addr,__pte(0));
+	}
+}
+#endif /* CONFIG_ARM_PAGE_SIZE_LARGE && CONFIG_HIGHMEM */
+
 /*
  * Set up the device mappings.  Since we clear out the page tables for all
  * mappings above VMALLOC_START, we will remove any debug device mappings.
@@ -1292,6 +1318,10 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 	map.length = PAGE_SIZE;
 	map.type = MT_LOW_VECTORS;
 	create_mapping(&map);
+
+#if defined(CONFIG_ARM_PAGE_SIZE_LARGE) && defined(CONFIG_HIGHMEM)
+	prepare_highmem_tables();
+#endif
 
 	/*
 	 * Ask the machine support to map in the statically mapped devices.

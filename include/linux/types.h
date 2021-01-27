@@ -135,9 +135,18 @@ typedef unsigned long blkcnt_t;
 #endif
 
 /*
- * The type of an index into the pagecache.
+ * The type of an index into the pagecache.  Use a #define so asm/types.h
+ * can override it.
  */
+#ifndef pgoff_t
+#ifdef CONFIG_LFS_ON_32CPU
+#define pgoff_t unsigned long long
+#define PGOFF_MAX	ULLONG_MAX
+#else
 #define pgoff_t unsigned long
+#define PGOFF_MAX	ULONG_MAX
+#endif
+#endif
 
 /*
  * A dma_addr_t can hold any valid DMA address, i.e., any address returned

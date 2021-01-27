@@ -139,7 +139,9 @@ static inline int wb_has_dirty_io(struct bdi_writeback *wb)
 static inline void __add_bdi_stat(struct backing_dev_info *bdi,
 		enum bdi_stat_item item, s64 amount)
 {
-	__percpu_counter_add(&bdi->bdi_stat[item], amount, BDI_STAT_BATCH);
+	if (bdi->dev) {
+		__percpu_counter_add(&bdi->bdi_stat[item], amount, BDI_STAT_BATCH);
+	}
 }
 
 static inline void __inc_bdi_stat(struct backing_dev_info *bdi,

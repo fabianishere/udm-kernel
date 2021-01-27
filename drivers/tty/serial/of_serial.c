@@ -198,6 +198,12 @@ static int of_platform_serial_probe(struct platform_device *ofdev)
 					  "auto-flow-control"))
 			port8250.capabilities |= UART_CAP_AFE;
 
+#ifdef CONFIG_AL_TRACE
+		if (of_property_read_bool(ofdev->dev.of_node,
+					  "al-trace-enable"))
+			port8250.al_trace = true;
+#endif
+
 		ret = serial8250_register_8250_port(&port8250);
 		break;
 	}

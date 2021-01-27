@@ -887,9 +887,9 @@ int __lock_page_or_retry(struct page *page, struct mm_struct *mm,
  * if called under rcu_read_lock.
  */
 pgoff_t page_cache_next_hole(struct address_space *mapping,
-			     pgoff_t index, unsigned long max_scan)
+			     pgoff_t index, rdx_t max_scan)
 {
-	unsigned long i;
+	rdx_t i;
 
 	for (i = 0; i < max_scan; i++) {
 		struct page *page;
@@ -917,7 +917,7 @@ EXPORT_SYMBOL(page_cache_next_hole);
  *
  * Returns: the index of the hole if found, otherwise returns an index
  * outside of the set specified (in which case 'index - return >=
- * max_scan' will be true). In rare cases of wrap-around, ULONG_MAX
+ * max_scan' will be true). In rare cases of wrap-around, PGOFF_MAX
  * will be returned.
  *
  * page_cache_prev_hole may be called under rcu_read_lock. However,
@@ -928,9 +928,9 @@ EXPORT_SYMBOL(page_cache_next_hole);
  * called under rcu_read_lock.
  */
 pgoff_t page_cache_prev_hole(struct address_space *mapping,
-			     pgoff_t index, unsigned long max_scan)
+			     pgoff_t index, rdx_t max_scan)
 {
-	unsigned long i;
+	rdx_t i;
 
 	for (i = 0; i < max_scan; i++) {
 		struct page *page;
@@ -939,7 +939,7 @@ pgoff_t page_cache_prev_hole(struct address_space *mapping,
 		if (!page || radix_tree_exceptional_entry(page))
 			break;
 		index--;
-		if (index == ULONG_MAX)
+		if (index == PGOFF_MAX)
 			break;
 	}
 
@@ -1810,7 +1810,11 @@ static void do_sync_mmap_readahead(struct vm_area_struct *vma,
 	 * mmap read-around
 	 */
 	ra_pages = max_sane_readahead(ra->ra_pages);
+#ifdef CONFIG_LFS_ON_32CPU
+	ra->start = max_t(long long, 0, offset - ra_pages / 2);
+#else
 	ra->start = max_t(long, 0, offset - ra_pages / 2);
+#endif
 	ra->size = ra_pages;
 	ra->async_size = ra_pages / 4;
 	ra_submit(ra, mapping, file);

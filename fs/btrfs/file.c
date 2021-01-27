@@ -32,6 +32,10 @@
 #include <linux/slab.h>
 #include <linux/btrfs.h>
 #include <linux/uio.h>
+#include <linux/socket.h>
+#include <net/sock.h>
+#include <linux/net.h>
+
 #include "ctree.h"
 #include "disk-io.h"
 #include "transaction.h"
@@ -2807,11 +2811,220 @@ out:
 	return offset;
 }
 
+#define MSG_KERNSPACE       0x1000000
+#define MSG_NOCATCHSIG   0x2000000
+
+#if defined(CONFIG_ARM64_64K_PAGES) || defined(CONFIG_ARM_PAGE_SIZE_32KB)
+#define MAX_PAGES_PER_RECVFILE (SZ_1M / PAGE_SIZE)
+#else
+#define MAX_PAGES_PER_RECVFILE (SZ_128K / PAGE_SIZE)
+#endif
+
+static ssize_t btrfs_splice_from_socket(struct file *file, struct socket *sock,
+					loff_t __user *ppos, size_t count)
+{
+	struct inode *inode = file->f_path.dentry->d_inode;
+	struct btrfs_root *root = BTRFS_I(inode)->root;
+	struct page **pages = NULL;
+	struct kvec *iov = NULL;
+	struct msghdr msg;
+	long recvtimeo;
+	ssize_t copied = 0;
+	size_t offset, offset_tmp;
+	int num_pages, dirty_pages;
+	int err = 0;
+	loff_t start_pos;
+	loff_t pos = file->f_pos;
+	int i;
+	unsigned count_tmp = count;
+	bool sync = (file->f_flags & O_DSYNC) || IS_SYNC(file->f_mapping->host);
+	struct iov_iter from;
+	struct kiocb iocb;
+	u64 lockstart;
+	u64 lockend;
+	bool need_unlock;
+	int ret;
+	struct extent_state *cached_state = NULL;
+
+#define ERROR_OUT do {mutex_unlock(&inode->i_mutex); goto out;} while(0)
+
+	if (!count)
+		return 0;
+
+	if (ppos && copy_from_user(&pos, ppos, sizeof pos))
+		return -EFAULT;
+
+	if (count > MAX_PAGES_PER_RECVFILE * PAGE_SIZE)
+		count = MAX_PAGES_PER_RECVFILE * PAGE_SIZE;
+
+	offset = pos & (PAGE_CACHE_SIZE - 1);
+	num_pages = (offset + count + PAGE_CACHE_SIZE - 1) >> PAGE_CACHE_SHIFT;
+	start_pos = round_down(pos, root->sectorsize);
+
+	if (!(pages = kmalloc(num_pages * sizeof(struct page *), GFP_KERNEL)) ||
+		!(iov = kmalloc(num_pages * sizeof(*iov), GFP_KERNEL)))
+		ERROR_OUT;
+
+	//vfs_check_frozen(inode->i_sb, SB_FREEZE_WRITE);
+
+	mutex_lock(&inode->i_mutex);
+
+	from.count = count;
+
+	init_sync_kiocb(&iocb, file);
+	iocb.ki_pos = pos;
+
+	count = generic_write_checks(&iocb, &from);
+	if (count <= 0)
+		ERROR_OUT;
+
+	current->backing_dev_info = inode_to_bdi(inode);
+
+	if ((err = file_remove_suid(file)))
+		ERROR_OUT;
+
+	if (root->fs_info->fs_state & BTRFS_SUPER_FLAG_ERROR) {
+		err = -EROFS;
+		ERROR_OUT;
+	}
+
+	update_time_for_write(inode);
+
+	if (start_pos > i_size_read(inode) &&
+		(err = btrfs_cont_expand(inode, i_size_read(inode), start_pos)))
+		ERROR_OUT;
+
+	if ((err = btrfs_delalloc_reserve_space(inode,
+					num_pages << PAGE_CACHE_SHIFT)))
+		goto out_free;
+	need_unlock = false;
+
+again:
+	if ((err = prepare_pages(inode, pages, num_pages,
+					pos,
+					count, false))) {
+		btrfs_delalloc_release_space(inode,
+					num_pages << PAGE_CACHE_SHIFT);
+		goto out_free;
+	}
+
+	/*This one is copied from __btrfs_buffered_write()*/
+	ret = lock_and_cleanup_extent_if_need(inode, pages, num_pages,
+						      pos, &lockstart, &lockend,
+						      &cached_state);
+	if (ret < 0) {
+		if (ret == -EAGAIN)
+			goto again;
+		ERROR_OUT;
+	} else if (ret > 0) {
+		need_unlock = true;
+		ret = 0;
+	}
+
+	for (i = 0, offset_tmp = offset; i < num_pages; i++) {
+		unsigned bytes = PAGE_CACHE_SIZE - offset_tmp;
+
+		if (bytes > count_tmp)
+			bytes = count_tmp;
+		iov[i].iov_base = kmap(pages[i]) + offset_tmp;
+		iov[i].iov_len = bytes;
+		offset_tmp = 0;
+		count_tmp -= bytes;
+	}
+
+        /* IOV is ready, receive the date from socket now */
+	msg.msg_name = NULL;
+	msg.msg_namelen = 0;
+	msg.msg_control = NULL;
+	msg.msg_controllen = 0;
+	msg.msg_flags = MSG_KERNSPACE;
+
+	recvtimeo = sock->sk->sk_rcvtimeo;
+	sock->sk->sk_rcvtimeo = 8 * HZ;
+	copied = kernel_recvmsg(sock, &msg, iov, num_pages, count,
+                             MSG_WAITALL | MSG_NOCATCHSIG);
+	sock->sk->sk_rcvtimeo = recvtimeo;
+
+	if (copied < 0) {
+		err = copied;
+		copied = 0;
+	}
+
+	/* FIXME:
+	 * The following results in at least one dirty_page even for copied==0
+	 * unless offset==0, but otherwise the first page would be corrupted
+	 * for an unknown reason.
+	 */
+	dirty_pages = (copied + offset + PAGE_CACHE_SIZE - 1) >>
+					PAGE_CACHE_SHIFT;
+
+	for (i = 0; i < num_pages; i++)
+		kunmap(pages[i]);
+	if (dirty_pages < num_pages) {
+		if (dirty_pages) {
+			spin_lock(&BTRFS_I(inode)->lock);
+			BTRFS_I(inode)->outstanding_extents++;
+			spin_unlock(&BTRFS_I(inode)->lock);
+		}
+		btrfs_delalloc_release_space(inode,
+                                        (num_pages - dirty_pages) <<
+                                        PAGE_CACHE_SHIFT);
+	}
+
+	if (dirty_pages) {
+		if ((err = btrfs_dirty_pages(root, inode, pages,
+					dirty_pages, pos, copied, NULL))) {
+			btrfs_delalloc_release_space(inode,
+					dirty_pages << PAGE_CACHE_SHIFT);
+			btrfs_drop_pages(pages, num_pages);
+			goto out_free;
+		}
+	}
+
+	if (need_unlock)
+		unlock_extent_cached(&BTRFS_I(inode)->io_tree,
+					lockstart, lockend, &cached_state,
+					GFP_NOFS);
+
+	btrfs_drop_pages(pages, num_pages);
+	cond_resched();
+
+	balance_dirty_pages_ratelimited(inode->i_mapping);
+	if (dirty_pages < (root->nodesize >> PAGE_CACHE_SHIFT) + 1)
+		btrfs_btree_balance_dirty(root);
+
+	pos += copied;
+
+out_free:
+	mutex_unlock(&inode->i_mutex);
+
+	if (copied > 0) {
+		file->f_pos = pos;
+		if (ppos && copy_to_user(ppos, &pos, sizeof *ppos))
+			err = -EFAULT;
+	}
+	spin_lock(&BTRFS_I(inode)->lock);
+	BTRFS_I(inode)->last_trans = root->fs_info->generation + 1;
+	BTRFS_I(inode)->last_sub_trans = root->log_transid;
+	spin_unlock(&BTRFS_I(inode)->lock);
+	if (copied > 0 || err == -EIOCBQUEUED)
+		err = generic_write_sync(file, pos, copied);
+	if (sync)
+		atomic_dec(&BTRFS_I(inode)->sync_writers);
+out:
+	kfree(iov);
+	kfree(pages);
+	current->backing_dev_info = NULL;
+
+	return err ? err : copied;
+}
+
 const struct file_operations btrfs_file_operations = {
 	.llseek		= btrfs_file_llseek,
 	.read_iter      = generic_file_read_iter,
 	.splice_read	= generic_file_splice_read,
 	.write_iter	= btrfs_file_write_iter,
+	.splice_from_socket	= btrfs_splice_from_socket,
 	.mmap		= btrfs_file_mmap,
 	.open		= generic_file_open,
 	.release	= btrfs_release_file,

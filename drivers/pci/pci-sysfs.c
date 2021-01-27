@@ -1011,8 +1011,9 @@ static int pci_mmap_resource(struct kobject *kobj, struct bin_attribute *attr,
 		return -ENODEV;
 
 	if (!pci_mmap_fits(pdev, i, vma, PCI_MMAP_SYSFS)) {
-		WARN(1, "process \"%s\" tried to map 0x%08lx bytes at page 0x%08lx on %s BAR %d (start 0x%16Lx, size 0x%16Lx)\n",
-			current->comm, vma->vm_end-vma->vm_start, vma->vm_pgoff,
+		WARN(1, "process \"%s\" tried to map 0x%08lx bytes "
+			"at page 0x%016llx on %s BAR %d (start 0x%16llx, size 0x%16llx)\n",
+			current->comm, vma->vm_end-vma->vm_start, (unsigned long long)vma->vm_pgoff,
 			pci_name(pdev), i,
 			(u64)pci_resource_start(pdev, i),
 			(u64)pci_resource_len(pdev, i));

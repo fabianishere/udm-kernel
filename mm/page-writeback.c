@@ -398,9 +398,12 @@ static unsigned long wp_next_time(unsigned long cur_time)
  */
 static inline void __bdi_writeout_inc(struct backing_dev_info *bdi)
 {
-	__inc_bdi_stat(bdi, BDI_WRITTEN);
-	__fprop_inc_percpu_max(&writeout_completions, &bdi->completions,
-			       bdi->max_prop_frac);
+	if (bdi->dev) {
+		__inc_bdi_stat(bdi, BDI_WRITTEN);
+		__fprop_inc_percpu_max(&writeout_completions, &bdi->completions,
+							   bdi->max_prop_frac);
+	}
+
 	/* First event after period switching was turned off? */
 	if (!unlikely(writeout_period_time)) {
 		/*
@@ -1855,7 +1858,7 @@ int write_cache_pages(struct address_space *mapping,
 			cycled = 1;
 		else
 			cycled = 0;
-		end = -1;
+		end = PGOFF_MAX;
 	} else {
 		index = wbc->range_start >> PAGE_CACHE_SHIFT;
 		end = wbc->range_end >> PAGE_CACHE_SHIFT;

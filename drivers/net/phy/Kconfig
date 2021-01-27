@@ -12,6 +12,30 @@ menuconfig PHYLIB
 
 if PHYLIB
 
+config MDIO_BOARDINFO
+	bool
+	default y
+
+config SWCONFIG
+	tristate "Switch configuration API"
+	---help---
+	  Switch configuration API using netlink. This allows
+	  you to configure the VLAN features of certain switches.
+
+config SWCONFIG_UBNT_EXT
+	bool "Switch configuration ubnt extension"
+	depends on SWCONFIG
+	default y
+	---help---
+	  ubnt swconfig extension
+
+config SWCONFIG_LEDS
+	bool "Switch LED trigger support"
+	depends on (SWCONFIG && LEDS_TRIGGERS)
+
+config UBNT_ACL
+	bool "Ubiquiti's ACL abstraction for PHY drivers"
+
 comment "MII PHY device drivers"
 
 config AT803X_PHY
@@ -19,17 +43,16 @@ config AT803X_PHY
 	---help---
 	  Currently supports the AT8030 and AT8035 model
 
+config AT8033_SEL_1P8
+	bool "RGMII voltage level setup"
+	depends on AT803X_PHY
+	---help---
+	  Enable 1V8 voltage level for RGMII
+
 config AMD_PHY
 	tristate "Drivers for the AMD PHYs"
 	---help---
 	  Currently supports the am79c874
-
-config AMD_XGBE_PHY
-	tristate "Driver for the AMD 10GbE (amd-xgbe) PHYs"
-	depends on (OF || ACPI) && HAS_IOMEM
-	depends on ARM64 || COMPILE_TEST
-	---help---
-	  Currently supports the AMD 10GbE PHY
 
 config MARVELL_PHY
 	tristate "Drivers for Marvell PHYs"
@@ -118,6 +141,16 @@ config MICREL_PHY
 	tristate "Driver for Micrel PHYs"
 	---help---
 	  Supports the KSZ9021, VSC8201, KS8001 PHYs.
+
+config AR8216_PHY
+	tristate "Driver for Atheros AR8216 switches"
+	select ETHERNET_PACKET_MANGLE
+	select SWCONFIG
+	select UBNT_ACL
+
+config AR8216_PHY_LEDS
+	bool "Atheros AR8216 switch LED support"
+	depends on (AR8216_PHY && LEDS_CLASS)
 
 config FIXED_PHY
 	tristate "Driver for MDIO Bus/PHY emulation with fixed speed/link PHYs"
@@ -212,6 +245,17 @@ config MDIO_BCM_UNIMAC
 	  This hardware can be found in the Broadcom GENET Ethernet MAC
 	  controllers as well as some Broadcom Ethernet switches such as the
 	  Starfighter 2 switches.
+
+config RTL83XX_API
+	bool "RTL83XX ASIC drivers for RTL83xx family"
+	---help---
+	  This module contains ASIC driver for RTL83xx family.
+
+config RTL8370_PHY
+	bool "Driver for the Realtek RTL8370MB switch"
+	select SWCONFIG 
+	select RTL83XX_API
+	select UBNT_ACL
 
 endif # PHYLIB
 

@@ -86,8 +86,8 @@ static int jffs2_do_readpage_nolock (struct inode *inode, struct page *pg)
 	unsigned char *pg_buf;
 	int ret;
 
-	jffs2_dbg(2, "%s(): ino #%lu, page at offset 0x%lx\n",
-		  __func__, inode->i_ino, pg->index << PAGE_CACHE_SHIFT);
+	jffs2_dbg(2, "%s(): ino #%lu, page at offset 0x%llx\n",
+		  __func__, inode->i_ino, (unsigned long long)pg->index << PAGE_CACHE_SHIFT);
 
 	BUG_ON(!PageLocked(pg));
 
@@ -251,8 +251,8 @@ static int jffs2_write_end(struct file *filp, struct address_space *mapping,
 	int ret = 0;
 	uint32_t writtenlen = 0;
 
-	jffs2_dbg(1, "%s(): ino #%lu, page at 0x%lx, range %d-%d, flags %lx\n",
-		  __func__, inode->i_ino, pg->index << PAGE_CACHE_SHIFT,
+	jffs2_dbg(1, "%s(): ino #%lu, page at 0x%llx, range %d-%d, flags %lx\n",
+		  __func__, inode->i_ino, (unsigned long long)pg->index << PAGE_CACHE_SHIFT,
 		  start, end, pg->flags);
 
 	/* We need to avoid deadlock with page_cache_read() in

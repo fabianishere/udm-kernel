@@ -3516,11 +3516,12 @@ static void expire_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 {
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
 
-	/* if the deadline is ahead of our clock, nothing to do */
-	if (likely((s64)(rq_clock(rq_of(cfs_rq)) - cfs_rq->runtime_expires) < 0))
+	/* nothing to expire */
+	if (cfs_rq->runtime_remaining <= 0)
 		return;
 
-	if (cfs_rq->runtime_remaining < 0)
+	/* if the deadline is ahead of our clock, nothing to do */
+	if (likely((s64)(rq_clock(rq_of(cfs_rq)) - cfs_rq->runtime_expires) < 0))
 		return;
 
 	/*
@@ -3538,8 +3539,14 @@ static void expire_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 		/* extend local deadline, drift is bounded above by 2 ticks */
 		cfs_rq->runtime_expires += TICK_NSEC;
 	} else {
-		/* global deadline is ahead, expiration has passed */
-		cfs_rq->runtime_remaining = 0;
+		/*
+		 * Global deadline is ahead, expiration has passed.
+		 *
+		 * Do not expire runtime completely. Otherwise put_prev_task()
+		 * can throttle all tasks when we already checked nr_running or
+		 * put_prev_entity() can throttle already chosen next entity.
+		 */
+		cfs_rq->runtime_remaining = 1;
 	}
 }
 
@@ -3549,7 +3556,7 @@ static void __account_cfs_rq_runtime(struct cfs_rq *cfs_rq, u64 delta_exec)
 	cfs_rq->runtime_remaining -= delta_exec;
 	expire_cfs_rq_runtime(cfs_rq);
 
-	if (likely(cfs_rq->runtime_remaining > 0))
+	if (likely(cfs_rq->runtime_remaining > 1))
 		return;
 
 	/*

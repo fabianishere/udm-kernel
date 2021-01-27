@@ -234,7 +234,7 @@ static inline void spi_reset_chip(struct dw_spi *dws)
 struct dw_spi_chip {
 	u8 poll_mode;	/* 1 for controller polling mode */
 	u8 type;	/* SPI/SSP/MicroWire */
-	void (*cs_control)(u32 command);
+	void (*cs_control)(struct dw_spi *dws, u32 command);
 };
 
 extern int dw_spi_add_host(struct device *dev, struct dw_spi *dws);

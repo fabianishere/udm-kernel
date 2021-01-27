@@ -577,7 +577,7 @@ static struct page *__r4w_get_page(void *priv, u64 offset, bool *uptodate)
 
 		if (offset >= i_size) {
 			*uptodate = true;
-			EXOFS_DBGMSG2("offset >= i_size index=0x%lx\n", index);
+			EXOFS_DBGMSG2("offset >= i_size index=0x%llx\n", _LLU(index));
 			return ZERO_PAGE(0);
 		}
 
@@ -596,7 +596,7 @@ static struct page *__r4w_get_page(void *priv, u64 offset, bool *uptodate)
 			*uptodate = true;
 		else
 			*uptodate = PageUptodate(page);
-		EXOFS_DBGMSG2("index=0x%lx uptodate=%d\n", index, *uptodate);
+		EXOFS_DBGMSG2("index=0x%llx uptodate=%d\n", _LLU(index), *uptodate);
 		return page;
 	} else {
 		EXOFS_DBGMSG2("YES that_locked_page index=0x%lx\n",

@@ -12,7 +12,7 @@ menuconfig NET
 	  The reason is that some programs need kernel networking support even
 	  when running on a stand-alone machine that isn't connected to any
 	  other computer.
-	  
+
 	  If you are upgrading from an older kernel, you
 	  should consider updating your networking tools too because changes
 	  in the kernel and the tools often go hand in hand. The tools are
@@ -102,6 +102,15 @@ config NETWORK_PHY_TIMESTAMPING
 	  overhead in the transmit and receive paths.
 
 	  If you are unsure how to answer this question, answer N.
+
+config LLDP_RX_DROP_COUNTER
+	bool "Separate counter for dropped lldp Rx packets"
+	default y
+	help
+	  UBNT hotfix for UDM-177.
+	  LLDP frames will increase 'rx_drop' count for switch0.1 on UDM,
+	  even if try to read them with lldpd exclusively on this interface.
+	  Users DDoS tech support about "why the device drops MY traffic"
 
 menuconfig NETFILTER
 	bool "Network packet filtering framework (Netfilter)"
@@ -265,10 +274,20 @@ config NET_RX_BUSY_POLL
 	default y
 
 config BQL
-	bool
+	bool "Byte Queue Limits"
 	depends on SYSFS
 	select DQL
 	default y
+
+config NET_MQ_TX_LOCK_OPT
+	boolean "Multi queue transmit lock optimization"
+	depends on SYSFS && !NET_SCHED
+	default n
+	---help---
+	  Experimental optimization for network devices running with tx_queue
+	  per CPU and default mq scheduler. This config gives option to skip
+	  tx_lock in transmit while holding root_lock for whole transmit
+	  It helps to save locking operations for xmit path
 
 config BPF_JIT
 	bool "enable BPF Just In Time compiler"
@@ -282,7 +301,7 @@ config BPF_JIT
 	  this feature changing /proc/sys/net/core/bpf_jit_enable
 
 config NET_FLOW_LIMIT
-	bool
+	bool "Net Flow Limit"
 	depends on RPS
 	default y
 	---help---
@@ -321,7 +340,7 @@ config NET_TCPPROBE
 
 	Documentation on how to use TCP connection probing can be found
 	at:
-	
+
 	  http://www.linuxfoundation.org/collaborate/workgroups/networking/tcpprobe
 
 	To compile this code as a module, choose M here: the

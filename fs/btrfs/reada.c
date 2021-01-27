@@ -116,7 +116,7 @@ static int __readahead_hook(struct btrfs_root *root, struct extent_buffer *eb,
 	struct reada_extent *re;
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct list_head list;
-	unsigned long index = start >> PAGE_CACHE_SHIFT;
+	rdx_t index = start >> PAGE_CACHE_SHIFT;
 	struct btrfs_device *for_dev;
 
 	if (eb)
@@ -330,7 +330,7 @@ static struct reada_extent *reada_find_extent(struct btrfs_root *root,
 	u64 length;
 	int nzones = 0;
 	int i;
-	unsigned long index = logical >> PAGE_CACHE_SHIFT;
+	rdx_t index = logical >> PAGE_CACHE_SHIFT;
 	int dev_replace_is_ongoing;
 
 	spin_lock(&fs_info->reada_lock);
@@ -495,7 +495,7 @@ static void reada_extent_put(struct btrfs_fs_info *fs_info,
 			     struct reada_extent *re)
 {
 	int i;
-	unsigned long index = re->logical >> PAGE_CACHE_SHIFT;
+	rdx_t index = re->logical >> PAGE_CACHE_SHIFT;
 
 	spin_lock(&fs_info->reada_lock);
 	if (--re->refcnt) {
@@ -589,7 +589,7 @@ static int reada_add_block(struct reada_control *rc, u64 logical,
 static void reada_peer_zones_set_lock(struct reada_zone *zone, int lock)
 {
 	int i;
-	unsigned long index = zone->end >> PAGE_CACHE_SHIFT;
+	rdx_t index = zone->end >> PAGE_CACHE_SHIFT;
 
 	for (i = 0; i < zone->ndevs; ++i) {
 		struct reada_zone *peer;
@@ -608,7 +608,7 @@ static int reada_pick_zone(struct btrfs_device *dev)
 	struct reada_zone *top_locked_zone = NULL;
 	u64 top_elems = 0;
 	u64 top_locked_elems = 0;
-	unsigned long index = 0;
+	rdx_t index = 0;
 	int ret;
 
 	if (dev->reada_curr_zone) {
@@ -806,7 +806,7 @@ static void dump_devs(struct btrfs_fs_info *fs_info, int all)
 {
 	struct btrfs_device *device;
 	struct btrfs_fs_devices *fs_devices = fs_info->fs_devices;
-	unsigned long index;
+	rdx_t index;
 	int ret;
 	int i;
 	int j;

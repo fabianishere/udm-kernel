@@ -111,8 +111,8 @@ static int do_readpage(struct page *page)
 	struct inode *inode = page->mapping->host;
 	loff_t i_size = i_size_read(inode);
 
-	dbg_gen("ino %lu, pg %lu, i_size %lld, flags %#lx",
-		inode->i_ino, page->index, i_size, page->flags);
+	dbg_gen("ino %lu, pg %llu, i_size %lld, flags %#lx",
+		inode->i_ino, (unsigned long long)page->index, i_size, page->flags);
 	ubifs_assert(!PageChecked(page));
 	ubifs_assert(!PagePrivate(page));
 
@@ -168,8 +168,8 @@ static int do_readpage(struct page *page)
 			dbg_gen("hole");
 			goto out_free;
 		}
-		ubifs_err(c, "cannot read page %lu of inode %lu, error %d",
-			  page->index, inode->i_ino, err);
+		ubifs_err(c, "cannot read page %llu of inode %lu, error %d",
+			  (unsigned long long)page->index, inode->i_ino, err);
 		goto error;
 	}
 
@@ -548,8 +548,8 @@ static int ubifs_write_end(struct file *file, struct address_space *mapping,
 	loff_t end_pos = pos + len;
 	int appending = !!(end_pos > inode->i_size);
 
-	dbg_gen("ino %lu, pos %llu, pg %lu, len %u, copied %d, i_size %lld",
-		inode->i_ino, pos, page->index, len, copied, inode->i_size);
+	dbg_gen("ino %lu, pos %llu, pg %llu, len %u, copied %d, i_size %lld",
+		inode->i_ino, pos, (unsigned long long)page->index, len, copied, inode->i_size);
 
 	if (unlikely(copied < len && len == PAGE_CACHE_SIZE)) {
 		/*
@@ -618,8 +618,8 @@ static int populate_page(struct ubifs_info *c, struct page *page,
 	void *addr, *zaddr;
 	pgoff_t end_index;
 
-	dbg_gen("ino %lu, pg %lu, i_size %lld, flags %#lx",
-		inode->i_ino, page->index, i_size, page->flags);
+	dbg_gen("ino %lu, pg %llu, i_size %lld, flags %#lx",
+		inode->i_ino, (unsigned long long)page->index, i_size, page->flags);
 
 	addr = zaddr = kmap(page);
 
@@ -931,8 +931,8 @@ static int do_writepage(struct page *page, int len)
 	}
 	if (err) {
 		SetPageError(page);
-		ubifs_err(c, "cannot write page %lu of inode %lu, error %d",
-			  page->index, inode->i_ino, err);
+		ubifs_err(c, "cannot write page %llu of inode %lu, error %d",
+			  (unsigned long long)page->index, inode->i_ino, err);
 		ubifs_ro_mode(c, err);
 	}
 
@@ -1007,8 +1007,8 @@ static int ubifs_writepage(struct page *page, struct writeback_control *wbc)
 	int err, len = i_size & (PAGE_CACHE_SIZE - 1);
 	void *kaddr;
 
-	dbg_gen("ino %lu, pg %lu, pg flags %#lx",
-		inode->i_ino, page->index, page->flags);
+	dbg_gen("ino %lu, pg %llu, pg flags %#lx",
+		inode->i_ino, (unsigned long long)page->index, page->flags);
 	ubifs_assert(PagePrivate(page));
 
 	/* Is the page fully outside @i_size? (truncate in progress) */
@@ -1470,7 +1470,7 @@ static int ubifs_vm_page_mkwrite(struct vm_area_struct *vma,
 	struct ubifs_budget_req req = { .new_page = 1 };
 	int err, update_time;
 
-	dbg_gen("ino %lu, pg %lu, i_size %lld",	inode->i_ino, page->index,
+	dbg_gen("ino %lu, pg %llu, i_size %lld", inode->i_ino, (unsigned long long)page->index,
 		i_size_read(inode));
 	ubifs_assert(!c->ro_media && !c->ro_mount);
 

@@ -25,6 +25,7 @@ config ARM64
 	select CPU_PM if (SUSPEND || CPU_IDLE)
 	select DCACHE_WORD_ACCESS
 	select GENERIC_ALLOCATOR
+	select EDAC_SUPPORT
 	select GENERIC_CLOCKEVENTS
 	select GENERIC_CLOCKEVENTS_BROADCAST if SMP
 	select GENERIC_CPU_AUTOPROBE
@@ -248,6 +249,16 @@ config ARCH_VEXPRESS
 	help
 	  This enables support for the ARMv8 software model (Versatile
 	  Express).
+
+config ARCH_ALPINE
+	bool "Annapurna-Labs Alpine Family"
+	select PCI
+	select PCI_MSI
+	select PCI_DOMAINS
+	select GENERIC_IRQ_CHIP
+	select POWER_RESET_ALPINE
+	help
+	  This enables support for Alpine SOC Family
 
 config ARCH_XGENE
 	bool "AppliedMicro X-Gene SOC Family"
@@ -528,6 +539,16 @@ config HOTPLUG_CPU
 	help
 	  Say Y here to experiment with turning CPUs off and on.  CPUs
 	  can be controlled through /sys/devices/system/cpu.
+
+config FUNC_REORDER
+	bool "Function reordering support"
+	default n
+	help
+	  Support for function reordering based on functionlist found in
+	  arch/arm64/kernel/functionlist.
+	  Function reordering can be used to increase locality on the I-cache.
+	  This option add the flag -ffunction-sections to the compilation
+	  flags.
 
 source kernel/Kconfig.preempt
 

@@ -133,6 +133,15 @@ config AHCI_MVEBU
 
 	  If unsure, say N.
 
+config AHCI_ALPINE
+	bool "Annapurna labs Alpine AHCI SATA support"
+	depends on ARCH_ALPINE
+	help
+	  This option enables support for the Alpine SoC's
+	  onboard AHCI SATA.
+
+	  If unsure, say N.
+
 config AHCI_SUNXI
 	tristate "Allwinner sunxi AHCI SATA support"
 	depends on ARCH_SUNXI

@@ -1,0 +1,52 @@
+/**
+ * @defgroup group_serdes SerDes
+ * SerDes HAL driver.
+ *
+ * For documentation see @ref group_serdes_doc section.\n
+ * For API reference see @ref group_serdes_api section.\n
+ * For SerDes HAL usage samples see @ref group_serdes_samples section.\n
+ *
+ * @defgroup group_serdes_doc Documentation
+ * @ingroup group_serdes
+ * @{
+ * @page serdesdoc
+ * @ref serdes_overview\n
+ * @section serdes_overview Overview
+ * This abstraction layer provides services for initializing the SerDes groups
+ * according to the platform specific required configuration and additionally
+ * provides SerDes diagnostics services.
+ *
+ * The SerDes stands for Serializer-Deserializer unit and provides a physical
+ * layer interface for many interface protocols.
+ *
+ * The SerDes are configured after power-up for the appropriate mode, speed
+ * and electrical parameters. During runtime, the SerDes operating conditions
+ * and functionality is managed by the protocol layer controller (PCIe, USB
+ * Ethernet, SATA....)
+ *
+ * SerDes are organized in groups, each group has two or four links, with shared
+ * transmit PLL. Hence the protocols running on links within same group have to
+ * similar speed multiples.
+ *
+ * Each SerDes group requires single clock reference, which comes from a group-
+ * specific input reference clock pins, or it could borrow the reference clock
+ * from the right or left neighbour group.
+ *
+ * Below is an example for SerDes initialization for specific topology for,
+ * a chip wth 4 groups, each with 4 lanes.
+ * L2R stands for Left-to-Right, and R2L stands for Right-to-Left, and refer
+ * to the reference clock source.
+ *
+ * @code
+ *	   125                                                         100
+ *	    |                                                           |
+ *	    |   -----------   -----------   -----------   -----------   |
+ *	    |   |         |<--|         |<--|         |<--|         |<--|
+ *	    |   |    D    |   |    C    |   |    B    |   |    A    |
+ *	    |-->|         |-->|         |-->|         |-->|         |
+ *	        -----------   -----------   -----------   -----------
+ *	           SGMII         SATA B        SATA A      USB + PCIE
+ * @endcode
+ * @}
+ *
+ */

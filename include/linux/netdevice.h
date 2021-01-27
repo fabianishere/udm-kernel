@@ -178,6 +178,9 @@ struct net_device_stats {
 	unsigned long	tx_window_errors;
 	unsigned long	rx_compressed;
 	unsigned long	tx_compressed;
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+	unsigned long	rx_lldp_dropped;
+#endif
 };
 
 
@@ -1557,6 +1560,9 @@ struct net_device {
 
 	atomic_long_t		rx_dropped;
 	atomic_long_t		tx_dropped;
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+	atomic_long_t	rx_lldp_dropped;
+#endif
 
 #ifdef CONFIG_WIRELESS_EXT
 	const struct iw_handler_def *	wireless_handlers;
@@ -1564,6 +1570,7 @@ struct net_device {
 #endif
 	const struct net_device_ops *netdev_ops;
 	const struct ethtool_ops *ethtool_ops;
+	const struct rtl83xx_ops *rtl83xx_ops;
 #ifdef CONFIG_NET_SWITCHDEV
 	const struct swdev_ops *swdev_ops;
 #endif
@@ -1752,7 +1759,21 @@ struct net_device {
 #endif
 	struct phy_device *phydev;
 	struct lock_class_key *qdisc_tx_busylock;
+	unsigned int ubnt_flags;
+#define UBNT_FRAME_ID_ENABLE    (1 << 0)
+#define UBNT_RATE_ID_ENABLE     (1 << 1)
+#define UBNT_NFBYPASS_ENABLE    (1 << 2)
+#define UBNT_NFBYPASS_MARK      (1 << 3)
+#define UBNT_VWIRE              (1 << 4)
+#define UBNT_VPORT              (1 << 5)
 };
+#define UBNT_IS_FRAME_ID_ENABLE(_dev)   ((_dev)->ubnt_flags & UBNT_FRAME_ID_ENABLE)
+#define UBNT_IS_RATE_ID_ENABLE(_dev)    ((_dev)->ubnt_flags & UBNT_RATE_ID_ENABLE)
+#define UBNT_IS_NFBYPASS_ENABLE(_dev)   ((_dev)->ubnt_flags & UBNT_NFBYPASS_ENABLE)
+#define UBNT_IS_NFBYPASS_MARK(_dev)     ((_dev)->ubnt_flags & UBNT_NFBYPASS_MARK)
+#define UBNT_IS_VWIRE(_dev)             ((_dev)->ubnt_flags & UBNT_VWIRE)
+#define UBNT_IS_VPORT(_dev)             ((_dev)->ubnt_flags & UBNT_VPORT)
+
 #define to_net_dev(d) container_of(d, struct net_device, dev)
 
 #define	NETDEV_ALIGN		32
@@ -3004,6 +3025,7 @@ void netdev_rx_handler_unregister(struct net_device *dev);
 bool dev_valid_name(const char *name);
 int dev_ioctl(struct net *net, unsigned int cmd, void __user *);
 int dev_ethtool(struct net *net, struct ifreq *);
+int dev_rtl83xx(struct net *net, struct ifreq *, unsigned int cmd);
 unsigned int dev_get_flags(const struct net_device *);
 int __dev_change_flags(struct net_device *, unsigned int flags);
 int dev_change_flags(struct net_device *, unsigned int);
@@ -3237,9 +3259,16 @@ static inline void __netif_tx_unlock_bh(struct netdev_queue *txq)
 	spin_unlock_bh(&txq->_xmit_lock);
 }
 
+static inline bool netif_supports_mq_tx_lock_opt(struct net_device *dev)
+{
+	return !!(dev->features & NETIF_F_MQ_TX_LOCK_OPT);
+}
+
+
 static inline void txq_trans_update(struct netdev_queue *txq)
 {
-	if (txq->xmit_lock_owner != -1)
+	if ((txq->xmit_lock_owner != -1) ||
+		netif_supports_mq_tx_lock_opt(txq->dev))
 		txq->trans_start = jiffies;
 }
 
@@ -3515,6 +3544,8 @@ struct rtnl_link_stats64 *dev_get_stats(struct net_device *dev,
 void netdev_stats_to_stats64(struct rtnl_link_stats64 *stats64,
 			     const struct net_device_stats *netdev_stats);
 
+extern int		hh_output_relaxed;
+extern int		netdev_skb_tstamp;
 extern int		netdev_max_backlog;
 extern int		netdev_tstamp_prequeue;
 extern int		weight_p;

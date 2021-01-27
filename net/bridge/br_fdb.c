@@ -132,6 +132,9 @@ static void fdb_del_hw_addr(struct net_bridge *br, const unsigned char *addr)
 
 static void fdb_delete(struct net_bridge *br, struct net_bridge_fdb_entry *f)
 {
+	if (br_handle_entry_hook)
+		br_handle_entry_hook(NULL, (void *)f, BR_FDB_ENTRY_DEL, NULL);
+
 	if (f->is_static)
 		fdb_del_hw_addr(br, f->addr.addr);
 
@@ -483,6 +486,7 @@ static struct net_bridge_fdb_entry *fdb_create(struct hlist_head *head,
 		fdb->added_by_user = 0;
 		fdb->added_by_external_learn = 0;
 		fdb->updated = fdb->used = jiffies;
+		fdb->flags = 0;
 		hlist_add_head_rcu(&fdb->hlist, head);
 	}
 	return fdb;
@@ -532,8 +536,11 @@ int br_fdb_insert(struct net_bridge *br, struct net_bridge_port *source,
 	return ret;
 }
 
-void br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
-		   const unsigned char *addr, u16 vid, bool added_by_user)
+int (*ubnt_loop_event)(struct net_device *dev);
+EXPORT_SYMBOL(ubnt_loop_event);
+
+struct net_bridge_fdb_entry *br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
+					   const unsigned char *addr, u16 vid, bool added_by_user, void *context)
 {
 	struct hlist_head *head = &br->hash[br_mac_hash(addr, vid)];
 	struct net_bridge_fdb_entry *fdb;
@@ -541,21 +548,25 @@ void br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
 
 	/* some users want to always flood. */
 	if (hold_time(br) == 0)
-		return;
+		return NULL;
 
 	/* ignore packets unless we are using this port */
 	if (!(source->state == BR_STATE_LEARNING ||
 	      source->state == BR_STATE_FORWARDING))
-		return;
+		return NULL;
 
 	fdb = fdb_find_rcu(head, addr, vid);
 	if (likely(fdb)) {
 		/* attempt to update an entry for a local interface */
 		if (unlikely(fdb->is_local)) {
-			if (net_ratelimit())
+			if (net_ratelimit()) {
+				if (ubnt_loop_event)
+					ubnt_loop_event(source->dev);
+
 				br_warn(br, "received packet on %s with "
 					"own address as source address\n",
 					source->dev->name);
+			}
 		} else {
 			/* fastpath: update of existing entry */
 			if (unlikely(source != fdb->dst)) {
@@ -571,6 +582,8 @@ void br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
 	} else {
 		spin_lock(&br->hash_lock);
 		if (likely(!fdb_find(head, addr, vid))) {
+			if (fdb && br_handle_entry_hook && context)
+				br_handle_entry_hook(source, (void *)fdb, BR_FDB_ENTRY_ADD, context);
 			fdb = fdb_create(head, source, addr, vid);
 			if (fdb) {
 				if (unlikely(added_by_user))
@@ -583,6 +596,8 @@ void br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
 		 */
 		spin_unlock(&br->hash_lock);
 	}
+
+	return fdb;
 }
 
 static int fdb_to_nud(const struct net_bridge_fdb_entry *fdb)
@@ -798,7 +813,7 @@ static int __br_fdb_add(struct ndmsg *ndm, struct net_bridge_port *p,
 	if (ndm->ndm_flags & NTF_USE) {
 		local_bh_disable();
 		rcu_read_lock();
-		br_fdb_update(p->br, p, addr, vid, true);
+		br_fdb_update(p->br, p, addr, vid, true, NULL);
 		rcu_read_unlock();
 		local_bh_enable();
 	} else {

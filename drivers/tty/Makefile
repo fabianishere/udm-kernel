@@ -1,3 +1,5 @@
+include $(srctree)/drivers/soc/alpine/alpine_hal.mk
+
 obj-$(CONFIG_TTY)		+= tty_io.o n_tty.o tty_ioctl.o tty_ldisc.o \
 				   tty_buffer.o tty_port.o tty_mutex.o tty_ldsem.o
 obj-$(CONFIG_LEGACY_PTYS)	+= pty.o
@@ -30,5 +32,8 @@ obj-$(CONFIG_PPC_EPAPR_HV_BYTECHAN) += ehv_bytechan.o
 obj-$(CONFIG_GOLDFISH_TTY)	+= goldfish.o
 obj-$(CONFIG_DA_TTY)		+= metag_da.o
 obj-$(CONFIG_MIPS_EJTAG_FDC_TTY) += mips_ejtag_fdc.o
+
+#al_trace
+obj-$(CONFIG_AL_TRACE)		+= al_serial_trace.o
 
 obj-y += ipwireless/

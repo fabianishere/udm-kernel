@@ -882,6 +882,66 @@ config CACHE_FEROCEON_L2_WRITETHROUGH
 	  Say Y here to use the Feroceon L2 cache in writethrough mode.
 	  Unless you specifically require this, say N for writeback mode.
 
+config ARM_PAGE_SIZE_LARGE
+	bool "Support large page sizes"
+	depends on CPU_V7 && ARM_LPAE && !HUGETLBFS && !TRANSPARENT_HUGEPAGE
+	default n
+	help
+	  Say Y to use page-sizes larger than 4KB.
+	  Advantages for large page size:
+		>Support for large storage volumes.
+		>Improvement for DMA (e.g. RAID) performance.
+	  Disadvantages for large pages:
+	    >Memory fragmentation increases.
+	    >Some existing software assumes 4KB page size, and may be incompatible.
+
+	  ARM architecture uses 4KB page. This options allows joining several H/W
+	  pages and using them as a single page in software.
+
+	  Unless you specifically require this, say N.
+
+choice
+	prompt "Page size to use"
+	default ARM_PAGE_SIZE_32KB
+	depends on ARM_PAGE_SIZE_LARGE && ARM_LPAE
+
+config ARM_PAGE_SIZE_64KB
+	bool "64KB pages"
+	help
+	  Sets page size to 64KB. Each linux-page is composed of 16 consecutive
+	  hardware pages. The consecutive hint bit is turned on, so all 16
+	  page-table entries are presented in H/W by a single TLB entry. This will
+	  minimise TLB misses.
+
+	  Binaries not specifically compiled for 64KB pages will probably crash.
+
+config ARM_PAGE_SIZE_32KB
+	bool "32KB pages"
+	help
+	  Sets page size to 32KB. Each linux-page is composed of 8 consecutive
+	  hardware pages.
+
+	  Binutills by default define maximum page size to be 32KB.
+	  Well-behaved, standard-compiled user-space programs will be able to
+	  work with a kernel using 32KB pages, even if not specifically
+	  compiled with this in mind.
+
+config ARM_PAGE_SIZE_4KB
+	bool "4KB pages"
+	help
+	  This setting will enable some large_page code, but keep the normal
+	  4KB pagesize.
+	  It is used for debugging.
+
+endchoice
+
+config ARM_PAGE_SIZE_LARGE_SHIFT
+	int
+	depends on ARM_PAGE_SIZE_LARGE
+	default 16 if ARM_PAGE_SIZE_64KB
+	default 15 if ARM_PAGE_SIZE_32KB
+	default 12 if ARM_PAGE_SIZE_4KB
+
 config MIGHT_HAVE_CACHE_L2X0
 	bool
 	help

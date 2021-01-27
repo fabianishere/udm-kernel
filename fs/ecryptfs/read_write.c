@@ -147,9 +147,9 @@ int ecryptfs_write(struct inode *ecryptfs_inode, char *data, loff_t offset,
 		if (IS_ERR(ecryptfs_page)) {
 			rc = PTR_ERR(ecryptfs_page);
 			printk(KERN_ERR "%s: Error getting page at "
-			       "index [%ld] from eCryptfs inode "
+			       "index [%lld] from eCryptfs inode "
 			       "mapping; rc = [%d]\n", __func__,
-			       ecryptfs_page_idx, rc);
+			       (unsigned long long)ecryptfs_page_idx, rc);
 			goto out;
 		}
 		ecryptfs_page_virt = kmap_atomic(ecryptfs_page);

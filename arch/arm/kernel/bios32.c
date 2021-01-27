@@ -570,6 +570,7 @@ char * __init pcibios_setup(char *str)
 	return str;
 }
 
+#ifndef CONFIG_PCI_EXTERNAL_ALPINE
 /*
  * From arch/i386/kernel/pci-i386.c:
  *
@@ -602,6 +603,17 @@ resource_size_t pcibios_align_resource(void *data, const struct resource *res,
 
 	return start;
 }
+#else
+/**
+ * Since External PCIe Alpine driver does not use arm structures (pcie_sys_data
+ * specifically), we can't use the default "pcibios_align_resource" resources
+ */
+resource_size_t pcibios_align_resource(void *data, const struct resource *res,
+				resource_size_t size, resource_size_t align)
+{
+	return res->start;
+}
+#endif
 
 /**
  * pcibios_enable_device - Enable I/O and memory.

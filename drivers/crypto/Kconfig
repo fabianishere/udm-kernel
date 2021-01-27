@@ -459,4 +459,6 @@ config CRYPTO_DEV_IMGTEC_HASH
 	  hardware hash accelerator. Supporting MD5/SHA1/SHA224/SHA256
 	  hashing algorithms.
 
+source drivers/crypto/al/Kconfig
+
 endif # CRYPTO_HW
