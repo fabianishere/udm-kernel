@@ -1023,6 +1023,28 @@ ar8xxx_sw_get_vid(struct switch_dev *dev, const struct switch_attr *attr,
 	return 0;
 }
 
+static int
+ar8xxx_sw_set_ivl(struct switch_dev *dev, const struct switch_attr *attr,
+		  struct switch_val *val)
+{
+	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
+
+	if (val->port_vlan >= AR8X16_MAX_VLANS)
+		return -EINVAL;
+
+	priv->use_ivl[val->port_vlan] = val->value.i;
+	return 0;
+}
+
+static int
+ar8xxx_sw_get_ivl(struct switch_dev *dev, const struct switch_attr *attr,
+		  struct switch_val *val)
+{
+	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
+	val->value.i = priv->use_ivl[val->port_vlan];
+	return 0;
+}
+
 int
 ar8xxx_sw_get_port_link(struct switch_dev *dev, int port,
 			struct switch_port_link *link)
@@ -1701,7 +1723,7 @@ const struct switch_attr ar8xxx_sw_attr_port[] = {
 	},
 };
 
-const struct switch_attr ar8xxx_sw_attr_vlan[1] = {
+const struct switch_attr ar8xxx_sw_attr_vlan[] = {
 	{
 		.type = SWITCH_TYPE_INT,
 		.name = "vid",
@@ -1709,6 +1731,15 @@ const struct switch_attr ar8xxx_sw_attr_vlan[1] = {
 		.set = ar8xxx_sw_set_vid,
 		.get = ar8xxx_sw_get_vid,
 		.max = 4094,
+	},
+	{
+		.type = SWITCH_TYPE_INT,
+		.name = "enable_ivl",
+		.description = "Enable IVL",
+		.set = ar8xxx_sw_set_ivl,
+		.get = ar8xxx_sw_get_ivl,
+		.max = 1,
+		.ofs = 1
 	},
 };
 

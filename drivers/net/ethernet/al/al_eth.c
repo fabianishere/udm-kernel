@@ -7652,8 +7652,8 @@ al_mod_eth_module_info(struct net_device *netdev,
 {
 	struct al_mod_eth_adapter *adapter = netdev_priv(netdev);
 
-	if (adapter && !adapter->up) {
-		/* interface is down, no available info */
+	if (!adapter || !adapter->use_lm || !adapter->up) {
+		/* interface is down || lm is not used, no available info */
 		return -EINVAL;
 	}
 
@@ -7665,6 +7665,12 @@ al_mod_eth_module_eeprom(struct net_device *netdev,
 				  struct ethtool_eeprom *eeprom, u8 *data)
 {
 	struct al_mod_eth_adapter *adapter = netdev_priv(netdev);
+
+	if (!adapter || !adapter->use_lm || !adapter->up) {
+		/* interface is down || lm is not used, no available info */
+		return -EINVAL;
+	}
+
 	return al_mod_eth_lm_get_module_eeprom(&adapter->lm_context, eeprom, data);
 }
 

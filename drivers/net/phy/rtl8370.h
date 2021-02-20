@@ -81,10 +81,12 @@
 #define RTL8370_PHY_ADDR_CPU_0 (0x10)
 #define RTL8370_PHY_ADDR_CPU_1 (0x11)
 
+/* clang-format off */
+
 /**
  * @brief Map physical port to logical port
  */
-#define PORT_MAPPING_DEFAULT(X)                   \
+#define PORT_MAPPING_DEFAULT_RTL8370(X)       \
 	X(PHY_PORT0, UTP_PORT0, "EDGE PORT 0")    \
 	X(PHY_PORT1, UTP_PORT1, "EDGE PORT 1")    \
 	X(PHY_PORT2, UTP_PORT2, "EDGE PORT 2")    \
@@ -93,25 +95,35 @@
 	X(PHY_PORT5, UTP_PORT5, "EDGE PORT 5")    \
 	X(PHY_PORT6, UTP_PORT6, "EDGE PORT 6")    \
 	X(PHY_PORT7, UTP_PORT7, "EDGE PORT 7")    \
-	X(PHY_PORT8, EXT_PORT0, "CPU PORT 0") \
+	X(PHY_PORT8, EXT_PORT0, "CPU PORT 0")     \
 	X(PHY_PORT9, EXT_PORT1, "CPU PORT 1")
+
+#define PORT_MAPPING_DEFAULT_RTL8367(X)       \
+	X(PHY_PORT0, UTP_PORT0, "EDGE PORT 0")    \
+	X(PHY_PORT1, UTP_PORT1, "EDGE PORT 1")    \
+	X(PHY_PORT2, UTP_PORT2, "EDGE PORT 2")    \
+	X(PHY_PORT3, UTP_PORT3, "EDGE PORT 3")    \
+	X(PHY_PORT4, UTP_PORT4, "EDGE PORT 4")    \
+	X(PHY_PORT5, EXT_PORT0, "CPU PORT 0")     \
+	X(PHY_PORT6, EXT_PORT1, "CPU PORT 1")
+
+/* clang-format on */
 
 /**
  * @brief Logical port as swconfig will see it
  */
 typedef enum _port_mapping {
 #define X(phy, log, desc) phy,
-	PORT_MAPPING_DEFAULT(X)
+	/* Always use mapping for chip with largest number of phy ports */
+	PORT_MAPPING_DEFAULT_RTL8370(X)
 #undef X
 	PHY_PORT_COUNT,
 	PHY_PORT_UNKNOWN
 } port_mapping_e;
 
-#define RTL8370_CPU_PORT_0 (PHY_PORT8)
-#define RTL8370_CPU_PORT_1 (PHY_PORT9)
-#define RTL8370_NUM_PORTS_CPU (2)
-#define RTL8370_NUM_PORTS_PHY (PHY_PORT_COUNT)
-#define RTL8370_NUM_PORTS_LOG (RTK_PORT_MAX)
+#define RTL8370_PORT_MAX_CPU (2)
+#define RTL8370_PORT_MAX_PHY (PHY_PORT_COUNT)
+#define RTL8370_PORT_MAX_LOG (RTK_PORT_MAX)
 
 #endif /* ! RTL8370_CUSTOM_PORT_MAPPING */
 
@@ -127,7 +139,6 @@ typedef enum _port_mapping {
 #define RTL8370_NUM_ACL_ENTRIES	(96)
 #define RTL8370_ARL_AGE_TIME_MAX_S (458)
 #define RTL8370_ARL_AGE_TIME_DEFAULT_S (300)
-#define RTL8370_HAS_NO_PHY(port) (RTL8370_CPU_PORT_0 == (port) || RTL8370_CPU_PORT_1 == (port))
 
 typedef rtk_uint32 rtl_arl_iter_t;
 
@@ -149,6 +160,7 @@ struct rtl8370_mac_mode {
 	rtk_mode_ext_t mode;
 	rtk_data_t delay_tx;
 	rtk_data_t delay_rx;
+	rtk_enable_t nway;
 };
 
 struct rtl8370_svlan_entry {
@@ -161,7 +173,24 @@ struct rtl8370_svlan_entry {
 struct rtl8370_svlan_table {
 	struct rtl8370_svlan_entry lut[RTL8370_NUM_SVLAN];
 	ssize_t lut_cnt;
-	uint16_t default_svid[RTL8370_NUM_PORTS_PHY];
+	uint16_t default_svid[RTL8370_PORT_MAX_PHY];
+};
+
+struct rtl8370_port_mapping {
+	const char* name;
+	const switch_chip_t id;
+	const uint8_t p2l[RTL8370_PORT_MAX_PHY];
+	const uint8_t l2p[RTL8370_PORT_MAX_LOG];
+	const uint8_t cpu[RTL8370_PORT_MAX_CPU];
+	const uint8_t port_cnt;
+	const uint8_t cpu_cnt;
+
+};
+
+struct rtl8370_vlan_entry {
+	uint16_t members;
+	uint8_t fid;
+	bool ivl_enabled;
 };
 
 struct rtl8370_priv {
@@ -176,16 +205,16 @@ struct rtl8370_priv {
 	uint32_t vlan_enabled;
 	uint16_t arl_age_time;
 	struct acl_hw hw_acl;
-	uint8_t  fid_table[RTL8370_NUM_VIDS];
-	uint8_t  efid_table[RTL8370_NUM_PORTS_PHY];
-
-	uint16_t vlan_table[RTL8370_NUM_VIDS];
+	uint8_t  efid_table[RTL8370_PORT_MAX_PHY];
+	struct rtl8370_vlan_entry vlan_table[RTL8370_NUM_VIDS];
 	struct rtl8370_svlan_table svlan_table;
 	uint16_t pvid_tagged;
-	uint16_t pvid_table[RTL8370_NUM_PORTS_PHY];
+	uint16_t pvid_table[RTL8370_PORT_MAX_PHY];
 	/* array of port isolation masks */
-	rtk_portmask_t port_isolation[RTL8370_NUM_PORTS_PHY];
-	struct rtl8370_mac_mode mac_mode[RTL8370_NUM_PORTS_CPU];
+	rtk_portmask_t port_isolation[RTL8370_PORT_MAX_PHY];
+	struct rtl8370_mac_mode mac_mode[RTL8370_PORT_MAX_CPU];
+	const struct rtl8370_port_mapping *port_map;
+	int reset_pin;
 };
 
 #define RTL8370_INTERPRET_API_ERRORS

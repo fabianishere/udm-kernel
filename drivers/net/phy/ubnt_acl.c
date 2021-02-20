@@ -89,13 +89,20 @@ static int ubnt_acl_rule_match(acl_entry_t *entry_a, acl_entry_t *entry_b)
 	}
 
 	if (entry_a->type == entry_b->type) {
-		if (entry_a->type == ACL_RULE_MAC) {
+		switch (entry_a->type) {
+		case ACL_RULE_PORT_REDIRECTION:
 			if (entry_a->port_dst == entry_b->port_dst) {
 				rc = ubnt_parse_acl_rule_mac_match(&entry_a->mac_sa,
 								   &entry_b->mac_sa);
 				rc |= ubnt_parse_acl_rule_mac_match(&entry_a->mac_da,
 								    &entry_b->mac_da);
 			}
+			break;
+		case ACL_RULE_VLAN_ASSIGNMENT:
+			rc = !(entry_a->svid == entry_b->svid);
+			break;
+		default:
+			break;
 		}
 	}
 	return rc;
@@ -114,15 +121,48 @@ static int ubnt_acl_rule_update(acl_entry_t *entry_old, acl_entry_t *entry_new)
 		return -EINVAL;
 	}
 
-	if (entry_old->type == ACL_RULE_MAC) {
+	switch (entry_old->type) {
+	case ACL_RULE_PORT_REDIRECTION:
 		entry_old->port_src |= entry_new->port_src;
+		break;
+	case ACL_RULE_VLAN_ASSIGNMENT:
+		entry_old->ether_type = entry_new->ether_type;
+		break;
+	default:
+		break;
+	}
 
-		if (ACL_RULE_ACTIVE == entry_old->state) {
-			entry_old->state = ACL_RULE_MODIFIED;
-		}
+	if (ACL_RULE_ACTIVE == entry_old->state) {
+		entry_old->state = ACL_RULE_MODIFIED;
 	}
 
 	return 0;
+}
+
+/**
+ * @brief Find ACL rule
+ *
+ * @param hw - platform dependent ACL control structure
+ * @param entry_in - entry to find - key should be filled
+ * @return int - error from errno.h, 0 on success
+ */
+int ubnt_acl_rule_get(struct acl_hw *hw, acl_entry_t *entry_in)
+{
+	acl_entry_t *entry = NULL, *entry_temp = NULL;
+
+	if (!entry_in) {
+		return -EINVAL;
+	}
+
+	list_for_each_entry_safe (entry, entry_temp, &hw->acl_table.list, list) {
+		if(entry->state != ACL_RULE_DELETED) {
+			if (!ubnt_acl_rule_match(entry_in, entry)) {
+				*entry_in = *entry;
+				return 0;
+			}
+		}
+	}
+	return -EINVAL;
 }
 
 /**
@@ -176,12 +216,23 @@ done:
 static int ubnt_acl_rule_del(struct acl_hw *hw, acl_entry_t *entry_out)
 {
 	acl_entry_t *entry, *entry_temp;
+	bool modified = false;
 
 	list_for_each_entry_safe (entry, entry_temp, &hw->acl_table.list, list) {
 		if (!ubnt_acl_rule_match(entry_out, entry)) {
-			entry->port_src &= ~(entry_out->port_src);
+			switch (entry->type) {
+			case ACL_RULE_PORT_REDIRECTION:
+				entry->port_src &= ~(entry_out->port_src);
+				modified = !!(entry->port_src);
+				break;
+			case ACL_RULE_VLAN_ASSIGNMENT:
+				modified = false;
+				break;
+			default:
+				return 0;
+			}
 
-			if (entry->port_src) {
+			if (modified) {
 				if (ACL_RULE_ACTIVE == entry->state) {
 					entry->state = ACL_RULE_MODIFIED;
 				}
@@ -202,13 +253,16 @@ static int ubnt_acl_rule_del(struct acl_hw *hw, acl_entry_t *entry_out)
 /**
  * @brief Parser macros
  */
-#define KEY_WORDS(X)             \
-	X(CMD_ADD, "add")        \
-	X(CMD_DEL, "del")        \
-	X(MAC_SRC, "mac_src")    \
-	X(MAC_DST, "mac_dst")    \
-	X(PORT_DST, "port_dst") \
-	X(PORTS_SRC, "ports_src")
+#define KEY_WORDS(X)            \
+	X(CMD_ADD, "add")           \
+	X(CMD_DEL, "del")           \
+	X(MAC_SRC, "mac_src")       \
+	X(MAC_DST, "mac_dst")       \
+	X(PORT_DST, "port_dst")     \
+	X(PORTS_SRC, "ports_src")   \
+	X(ETHER_TYPE, "ether_type") \
+	X(SVID, "svid")
+
 
 #define KEY_OP(X) \
 	X(CMD)    \
@@ -302,7 +356,7 @@ static int ubnt_acl_rule_ports_parse(struct acl_hw *hw, const char *str, acl_ent
 		break;
 	case ACL_KEY_PORTS_SRC:
 		port_p = &entry->port_src;
-		port_max_cnt = hw->ops->max_ports;
+		port_max_cnt = hw->max_ports;
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -315,7 +369,7 @@ static int ubnt_acl_rule_ports_parse(struct acl_hw *hw, const char *str, acl_ent
 	for (;;) {
 		noi = sscanf(str, "%d%n", &port_num, &read);
 		if (1 == noi) {
-			if (port_num >= 0 && port_num < hw->ops->max_ports && port_max_cnt--) {
+			if (port_num >= 0 && port_num < hw->max_ports && port_max_cnt--) {
 				*port_p |= (1 << port_num);
 				rc = 0;
 			} else {
@@ -328,6 +382,40 @@ static int ubnt_acl_rule_ports_parse(struct acl_hw *hw, const char *str, acl_ent
 		str += read;
 	}
 	return rc;
+}
+
+/**
+ * @brief Parse ethernet header field SVID/ethertype
+ *
+ * @param hw - platform dependent ACL control structure
+ * @param str - numbers string
+ * @param entry - the ACL entry
+ * @param key_id - parsed key
+ * @return int - error from errno.h, 0 on success
+ */
+static int ubnt_acl_rule_eth_field_parse(struct acl_hw *hw, const char *str, acl_entry_t *entry,
+				     int key_id)
+{
+	#define FMT_VID 		"%hu%*c"
+	#define FMT_ETHER_TYPE 	"0x%hx%*c"
+	uint16_t *field_p;
+
+	switch (key_id) {
+	case ACL_KEY_SVID:
+		field_p = &entry->svid;
+		break;
+	case ACL_KEY_ETHER_TYPE:
+		field_p = &entry->ether_type;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	if (0 == *str) {
+		return -EINVAL;
+	}
+
+	return (sscanf(str, ((key_id == ACL_KEY_ETHER_TYPE) ? FMT_ETHER_TYPE : FMT_VID ), field_p) == 1) ? 0 : -EINVAL;
 }
 
 /**
@@ -351,10 +439,14 @@ int ubnt_acl_rule_process(struct acl_hw *hw, const char *str, acl_entry_type_t r
 	/**
 	 * Format :
 	 * op <key> '<value>'
-	 * ACL_RULE_MAC	-> "add mac_src '*' mac_dst '*' ports_src '1 2 3 4' port_dst '0'"
-	 * 				-> "add mac_src '6A:FC:9E:83:40:68' mac_dst '*' ports_src '0 2' port_dst '1'"
-	 *				-> "del mac_src '*' ports_src '1 2 3 4' mac_dst '*' port_dst '0'"
-	 * 				-> "del mac_src '6A:FC:9E:83:40:68' mac_dst '*' ports_src '0 2' port_dst '1'"
+	 * ACL_RULE_PORT_REDIRECTION
+	 *		"add mac_src '*' mac_dst '*' ports_src '1 2 3 4' port_dst '0'"
+	 *		"add mac_src '6A:FC:9E:83:40:68' mac_dst '*' ports_src '0 2' port_dst '1'"
+	 *		"del mac_src '*' ports_src '1 2 3 4' mac_dst '*' port_dst '0'"
+	 *		"del mac_src '6A:FC:9E:83:40:68' mac_dst '*' ports_src '0 2' port_dst '1'"
+	 * ACL_RULE_VLAN_ASSIGNMENT
+	 * 		"add svid '4094' ether_type '0x88cc'"
+	 *		"del svid '4094'"
 	 */
 	enum { ACL_RULE_CMD_ADD = 0, ACL_RULE_CMD_DEL, ACL_RULE_CMD_UNKNOWN };
 
@@ -400,7 +492,7 @@ int ubnt_acl_rule_process(struct acl_hw *hw, const char *str, acl_entry_type_t r
 				break;
 
 			case ACL_OP_KEY:
-				if (ACL_RULE_MAC == rule_type) {
+				if (ACL_RULE_PORT_REDIRECTION == rule_type) {
 					if (!strcmp(p, acl_keywords[ACL_KEY_MAC_DST])) {
 						parse_val = ubnt_acl_rule_mac_parse;
 						parse_type = ACL_KEY_MAC_DST;
@@ -413,6 +505,16 @@ int ubnt_acl_rule_process(struct acl_hw *hw, const char *str, acl_entry_type_t r
 					} else if (!strcmp(p, acl_keywords[ACL_KEY_PORTS_SRC])) {
 						parse_val = ubnt_acl_rule_ports_parse;
 						parse_type = ACL_KEY_PORTS_SRC;
+					} else {
+						return -EINVAL;
+					}
+				} else if (ACL_RULE_VLAN_ASSIGNMENT == rule_type) {
+					if (!strcmp(p, acl_keywords[ACL_KEY_SVID])) {
+						parse_val = ubnt_acl_rule_eth_field_parse;
+						parse_type = ACL_KEY_SVID;
+					} else if (!strcmp(p, acl_keywords[ACL_KEY_ETHER_TYPE])) {
+						parse_val = ubnt_acl_rule_eth_field_parse;
+						parse_type = ACL_KEY_ETHER_TYPE;
 					} else {
 						return -EINVAL;
 					}
@@ -442,11 +544,21 @@ int ubnt_acl_rule_process(struct acl_hw *hw, const char *str, acl_entry_type_t r
 	}
 	/* Presence validation */
 	if (ACL_OP_KEY == op) {
-		if (ACL_RULE_MAC == rule_type) {
+		switch (rule_type) {
+		case ACL_RULE_PORT_REDIRECTION:
 			if (!key_hit[ACL_KEY_MAC_SRC] || !key_hit[ACL_KEY_MAC_DST] ||
 			    !key_hit[ACL_KEY_PORT_DST] || !key_hit[ACL_KEY_PORTS_SRC]) {
 				return -EINVAL;
 			}
+			break;
+		case ACL_RULE_VLAN_ASSIGNMENT:
+			if (!key_hit[ACL_KEY_ETHER_TYPE] ||
+			    (ACL_RULE_CMD_ADD == cmd && !key_hit[ACL_KEY_SVID])) {
+				return -EINVAL;
+			}
+			break;
+		default:
+			break;
 		}
 	} else {
 		return -EINVAL;
@@ -495,51 +607,63 @@ int ubnt_acl_get_acl_table(struct acl_hw *hw)
 
 	if (ACL_TOTAL_CNT(hw->acl_table)) {
 		list_for_each_entry_safe (entry, entry_temp, &hw->acl_table.list, list) {
-			if (ACL_RULE_MAC == entry->type) {
-				if (entry->state == ACL_RULE_INACTIVE) {
+			if (entry->state == ACL_RULE_INACTIVE) {
 					BUF_APPEND_PRINTF("ID: <Unassigned>\n");
-				} else {
+			} else {
 					BUF_APPEND_PRINTF("ID <%d>\n", entry->idx);
-				}
-
-				BUF_APPEND_PRINTF("MAC_SRC: ");
-				if (ubnt_mac_zero_addr(&entry->mac_sa)) {
-					BUF_APPEND_PRINTF("%02x:%02x:%02x:%02x:%02x:%02x\n",
-							  entry->mac_sa.uc[0], entry->mac_sa.uc[1],
-							  entry->mac_sa.uc[2], entry->mac_sa.uc[3],
-							  entry->mac_sa.uc[4], entry->mac_sa.uc[5]);
-				} else {
-					BUF_APPEND_PRINTF("*\n");
-				}
-
-				BUF_APPEND_PRINTF("MAC_DST: ");
-				if (ubnt_mac_zero_addr(&entry->mac_da)) {
-					BUF_APPEND_PRINTF("%02x:%02x:%02x:%02x:%02x:%02x\n",
-							  entry->mac_da.uc[0], entry->mac_da.uc[1],
-							  entry->mac_da.uc[2], entry->mac_da.uc[3],
-							  entry->mac_da.uc[4], entry->mac_da.uc[5]);
-				} else {
-					BUF_APPEND_PRINTF("*\n");
-				}
-
-				BUF_APPEND_PRINTF("PORTS_SRC: ");
-
-				for (i = 0; i < hw->ops->max_ports; ++i) {
-					if (!(entry->port_src & (1 << i))) {
-						continue;
-					}
-					BUF_APPEND_PRINTF("%d ", i);
-				}
-
-				BUF_APPEND_PRINTF("\nPORT_DST: ");
-				for (i = 0; i < hw->ops->max_ports; ++i) {
-					if (!(entry->port_dst & (1 << i))) {
-						continue;
-					}
-					BUF_APPEND_PRINTF("%d ", i);
-				}
-				BUF_APPEND_PRINTF("\nSTATE: %s\n\n", acl_state_str[entry->state]);
 			}
+
+			BUF_APPEND_PRINTF("RULE TYPE: : %d\n", entry->type);
+
+			switch(entry->type) {
+				case ACL_RULE_PORT_REDIRECTION:
+					BUF_APPEND_PRINTF("MAC_SRC: ");
+					if (ubnt_mac_zero_addr(&entry->mac_sa)) {
+						BUF_APPEND_PRINTF("%02x:%02x:%02x:%02x:%02x:%02x\n",
+								entry->mac_sa.uc[0], entry->mac_sa.uc[1],
+								entry->mac_sa.uc[2], entry->mac_sa.uc[3],
+								entry->mac_sa.uc[4], entry->mac_sa.uc[5]);
+					} else {
+						BUF_APPEND_PRINTF("*\n");
+					}
+
+					BUF_APPEND_PRINTF("MAC_DST: ");
+					if (ubnt_mac_zero_addr(&entry->mac_da)) {
+						BUF_APPEND_PRINTF("%02x:%02x:%02x:%02x:%02x:%02x\n",
+								entry->mac_da.uc[0], entry->mac_da.uc[1],
+								entry->mac_da.uc[2], entry->mac_da.uc[3],
+								entry->mac_da.uc[4], entry->mac_da.uc[5]);
+					} else {
+						BUF_APPEND_PRINTF("*\n");
+					}
+
+					BUF_APPEND_PRINTF("PORTS_SRC: ");
+
+					for (i = 0; i < hw->max_ports; ++i) {
+						if (!(entry->port_src & (1 << i))) {
+							continue;
+						}
+						BUF_APPEND_PRINTF("%d ", i);
+					}
+
+					BUF_APPEND_PRINTF("\nPORT_DST: ");
+					for (i = 0; i < hw->max_ports; ++i) {
+						if (!(entry->port_dst & (1 << i))) {
+							continue;
+						}
+						BUF_APPEND_PRINTF("%d ", i);
+					}
+					break;
+				case ACL_RULE_VLAN_ASSIGNMENT:
+					BUF_APPEND_PRINTF("ETHER_TYPE: 0x04%X\n", entry->ether_type);
+					BUF_APPEND_PRINTF("SVID: %d\n", entry->svid);
+					break;
+				default:
+					BUF_APPEND_PRINTF("UNKNOWN TYPE: 0x%X\n", entry->ether_type);
+
+					break;
+			}
+			BUF_APPEND_PRINTF("\nSTATE: %s\n\n", acl_state_str[entry->state]);
 		}
 	}
 

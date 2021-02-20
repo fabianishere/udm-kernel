@@ -99,6 +99,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define LM_STEP_RETIMER_WAIT_FOR_LOCK_CHECK_INTERVAL 10 /* msec */
 
 #define SFP_PRESENT_GPIO_DEBOUNCE_ITERS	9
+/**
+ *  SFF 8472 - index 4 to length array (offset 0x12),
+ *  copper or direct attach cable (units of m)
+ */
+#define SFP_SFF8472_LENGTH_FIELD_4_COPPER (4)
 
 enum al_mod_eth_lm_step_detection_state {
 	LM_STEP_DETECTION_INIT,
@@ -309,8 +314,27 @@ static int al_mod_eth_sfp_detect(struct al_mod_eth_lm_context *lm_context,
 
 		cc = al_mod_eth_sfp_crc(&id.base, sizeof(id.base) - 1);
 		if (cc != id.base.cc_base) {
+			const char *uc_dac_sfp_pn = "UC-DAC-SFP+";
 			lm_debug("%s: EEPROM base structure checksum failure (0x%02x != 0x%02x)",
 				    __func__, cc, id.base.cc_base);
+			/**
+			 * There is a batch of UC-DAC-SFP+ with faulty EEPROM which results in
+			 * a bad detection -> bad functionality. To workaround it we need to
+			 * set the basic parameters manually.
+			 **/
+			if (!strncmp(id.base.vendor_pn, uc_dac_sfp_pn,
+				     strlen(uc_dac_sfp_pn))) {
+				/* DAC passive mode */
+				id.base.sfp_ct_passive = 1;
+				/* BR nominal */
+				id.base.br_nominal = 103;
+				/* Set len to 1 meter */
+				id.base.link_len[SFP_SFF8472_LENGTH_FIELD_4_COPPER] = 1;
+				/* As data are faulty, deny the access to EEPROM */
+				lm_context->sfp_quirk_flags |=
+					BIT(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS);
+				break;
+			}
 		}
 
 		cc = al_mod_eth_sfp_crc(&id.ext, sizeof(id.ext) - 1);
@@ -320,9 +344,10 @@ static int al_mod_eth_sfp_detect(struct al_mod_eth_lm_context *lm_context,
 			memset(&id.ext, 0, sizeof(id.ext));
 		}
 
-		if (!al_mod_eth_sfp_phy_id(lm_context, &phy_id)) {
+		if (!test_bit(AL_MOD_SFP_QUIRK_NO_PHY_DETECTION, &lm_context->sfp_quirk_flags) &&
+			     !al_mod_eth_sfp_phy_id(lm_context, &phy_id)) {
 			lm_debug("%s: SFP module has PHY with ID 0x%08x",
-			__func__, phy_id);
+				 __func__, phy_id);
 			lm_context->sfp_has_phyreg = AL_TRUE;
 		}
 	} while (0);
@@ -352,10 +377,10 @@ static int al_mod_eth_sfp_detect(struct al_mod_eth_lm_context *lm_context,
 		    (lm_context->mode == AL_ETH_LM_MODE_DISCONNECTED)) {
 			lm_debug("%s: %s DAC (%d M) detected (max signal rate %d)", __func__,
 				 (id.base.sfp_ct_passive) ? "Passive" : "Active",
-				 id.base.link_len[5], id.base.br_nominal);
+				 id.base.link_len[SFP_SFF8472_LENGTH_FIELD_4_COPPER], id.base.br_nominal);
 		}
 		/* for active direct attached need to use len 0 in the retimer configuration */
-		lm_context->da_len = (id.base.sfp_ct_passive) ? id.base.link_len[5] : 0;
+		lm_context->da_len = (id.base.sfp_ct_passive) ? id.base.link_len[SFP_SFF8472_LENGTH_FIELD_4_COPPER] : 0;
 	} else if (lm_context->sfp_probe_10g && al_mod_eth_sfp_is_10g(&id)) {
 		*new_mode = AL_ETH_LM_MODE_10G_OPTIC;
 		if ((lm_context->mode != *new_mode) &&

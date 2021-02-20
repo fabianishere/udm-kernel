@@ -172,7 +172,8 @@ enum al_mod_sfp_quirks_e {
 	AL_MOD_SFP_QUIRK_NO_SEQ_READING = 0,
 	/* limit access to module's EEPROM */
 	AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS,
-
+	/* skip PHY detection */
+	AL_MOD_SFP_QUIRK_NO_PHY_DETECTION,
 	AL_MOD_SFP_QUIRK_COUNT
 };
 
@@ -195,7 +196,8 @@ struct al_mod_sfp_fixup_entry {
 	X("MA5671A",		BIT(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS),	10) \
 	X("3FE46541AA",		BIT(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS),	10) \
 	X("UF-INSTANT",		BIT(AL_MOD_SFP_QUIRK_NO_SEQ_READING),	0)  \
-	X("V2801F",			BIT(AL_MOD_SFP_QUIRK_NO_SEQ_READING),	0)
+	X("V2801F",			BIT(AL_MOD_SFP_QUIRK_NO_SEQ_READING),	0)  \
+	X("UC-DAC-SFP+",	BIT(AL_MOD_SFP_QUIRK_NO_PHY_DETECTION),	0)
 
 struct al_mod_eth_lm_step_retimer_data {
 	int		rx_adap_state;
