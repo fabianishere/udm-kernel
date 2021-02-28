@@ -2071,7 +2071,7 @@ retry:
 		if (rc)
 			break;
 
-		tofind = min((wsize / PAGE_CACHE_SIZE) - 1, end - index) + 1;
+		tofind = min((pgoff_t)((wsize / PAGE_CACHE_SIZE)) - 1, end - index) + 1;
 
 		wdata = wdata_alloc_and_fillpages(tofind, mapping, end, &index,
 						  &found_pages);
@@ -3308,7 +3308,7 @@ cifs_readpages_read_into_pages(struct TCP_Server_Info *server,
 	/* determine the eof that the server (probably) has */
 	eof = CIFS_I(rdata->mapping->host)->server_eof;
 	eof_index = eof ? (eof - 1) >> PAGE_CACHE_SHIFT : 0;
-	cifs_dbg(FYI, "eof=%llu eof_index=%lu\n", eof, eof_index);
+	cifs_dbg(FYI, "eof=%llu eof_index=%llu\n", eof, (unsigned long long)eof_index);
 
 	rdata->got_bytes = 0;
 	rdata->tailsz = PAGE_CACHE_SIZE;

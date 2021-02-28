@@ -1,0 +1,11 @@
+/**
+ * @defgroup group_ssm SSM common API
+ * Security, storage and memory HAL driver.
+ *
+ * For API reference see @ref group_ssm_api section.\n
+ *
+ * @section SSM_engines Engines
+ * - @link group_raid_doc Raid Acceleration Engine @endlink - Provides the software API for submitting transactions (memory copy, RAID6 parity calculations, etc.).
+ * - @link group_crypto_doc Crypto Acceleration Engine @endlink - Provides the software API for submitting cryptographic transactions (encryption, decryption, authentications, etc.).
+ * - @link group_crc_memcpy_doc Crc/memcpy Acceleration Engine @endlink - Provides software API for submitting memory transactions (CRC, checksum, memcpy).
+ */

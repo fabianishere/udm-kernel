@@ -812,7 +812,7 @@ void __netpoll_cleanup(struct netpoll *np)
 		const struct net_device_ops *ops;
 
 		ops = np->dev->netdev_ops;
-		if (ops->ndo_netpoll_cleanup)
+		if (ops && ops->ndo_netpoll_cleanup)
 			ops->ndo_netpoll_cleanup(np->dev);
 
 		RCU_INIT_POINTER(np->dev->npinfo, NULL);

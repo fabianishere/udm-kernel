@@ -45,7 +45,7 @@ struct chip_data {
 	u8 bits_per_word;
 	u16 clk_div;		/* baud rate divider */
 	u32 speed_hz;		/* baud rate */
-	void (*cs_control)(u32 command);
+	void (*cs_control)(struct dw_spi *dws, u32 command);
 };
 
 #ifdef CONFIG_DEBUG_FS
@@ -145,9 +145,11 @@ static void dw_spi_set_cs(struct spi_device *spi, bool enable)
 
 	/* Chip select logic is inverted from spi_set_cs() */
 	if (chip && chip->cs_control)
-		chip->cs_control(!enable);
+		chip->cs_control(dws, !enable);
 
-	if (!enable)
+	if (enable)
+		dw_writel(dws, DW_SPI_SER, 0);
+	else
 		dw_writel(dws, DW_SPI_SER, BIT(spi->chip_select));
 }
 
@@ -338,22 +340,6 @@ static int dw_spi_transfer_one(struct spi_master *master,
 			| (chip->tmode << SPI_TMOD_OFFSET);
 	}
 
-	/*
-	 * Adjust transfer mode if necessary. Requires platform dependent
-	 * chipselect mechanism.
-	 */
-	if (chip->cs_control) {
-		if (dws->rx && dws->tx)
-			chip->tmode = SPI_TMOD_TR;
-		else if (dws->rx)
-			chip->tmode = SPI_TMOD_RO;
-		else
-			chip->tmode = SPI_TMOD_TO;
-
-		cr0 &= ~SPI_TMOD_MASK;
-		cr0 |= (chip->tmode << SPI_TMOD_OFFSET);
-	}
-
 	dw_writel(dws, DW_SPI_CTRL0, cr0);
 
 	/* Check if current transfer is a DMA transaction */
@@ -399,6 +385,26 @@ static int dw_spi_transfer_one(struct spi_master *master,
 	return 1;
 }
 
+
+static int dw_spi_gpio_cs_control_setup(int gpio)
+{
+	int status;
+
+	status = gpio_request(gpio, "dw_spi_gpio_cs_control");
+	if (status < 0)
+		return status;
+
+	status = gpio_direction_output(gpio, 1);
+
+	return status;
+}
+
+static void dw_spi_gpio_cs_control(struct dw_spi *dws, u32 value)
+{
+	/* CS is active low */
+	gpio_set_value(dws->master->cs_gpios[0], value ? 0 : 1);
+}
+
 static void dw_spi_handle_err(struct spi_master *master,
 		struct spi_message *msg)
 {
@@ -416,6 +422,7 @@ static int dw_spi_setup(struct spi_device *spi)
 	struct dw_spi_chip *chip_info = NULL;
 	struct chip_data *chip;
 	int ret;
+	int status;
 
 	/* Only alloc on first setup */
 	chip = spi_get_ctldata(spi);
@@ -442,6 +449,13 @@ static int dw_spi_setup(struct spi_device *spi)
 
 		chip->rx_threshold = 0;
 		chip->tx_threshold = 0;
+	} else if (spi->master->cs_gpios) {
+		/* DT defined GPIO to control the CS, perform setup and use it */
+		status = dw_spi_gpio_cs_control_setup(spi->master->cs_gpios[0]);
+		if (status)
+			return status;
+
+		chip->cs_control = dw_spi_gpio_cs_control;
 	}
 
 	if (spi->bits_per_word == 8) {
@@ -510,6 +524,32 @@ static void spi_hw_init(struct device *dev, struct dw_spi *dws)
 	}
 }
 
+static struct spi_master *g_master;
+
+void
+dw_spi_lock(void)
+{
+	if (!g_master) {
+		pr_err("dw_spi: no bus to lock\n");
+		return;
+	}
+
+	mutex_lock(&g_master->bus_lock_mutex);
+}
+EXPORT_SYMBOL(dw_spi_lock);
+
+void
+dw_spi_unlock(void)
+{
+	if (!g_master) {
+		pr_err("dw_spi: no bus to unlock\n");
+		return;
+	}
+
+	mutex_unlock(&g_master->bus_lock_mutex);
+}
+EXPORT_SYMBOL(dw_spi_unlock);
+
 int dw_spi_add_host(struct device *dev, struct dw_spi *dws)
 {
 	struct spi_master *master;
@@ -545,6 +585,8 @@ int dw_spi_add_host(struct device *dev, struct dw_spi *dws)
 	master->handle_err = dw_spi_handle_err;
 	master->max_speed_hz = dws->max_freq;
 	master->dev.of_node = dev->of_node;
+
+	g_master = master;
 
 	/* Basic HW init */
 	spi_hw_init(dev, dws);

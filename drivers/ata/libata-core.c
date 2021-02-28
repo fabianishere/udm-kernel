@@ -174,6 +174,12 @@ MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_VERSION);
 
 
+#ifdef CONFIG_ARCH_ALPINE
+bool al_ahci_sss_wa_needed(struct device *dev);
+int al_sata_link_hardreset(struct ata_link *link,
+		const unsigned long *timing, unsigned long deadline);
+#endif
+
 static bool ata_sstatus_online(u32 sstatus)
 {
 	return (sstatus & 0xf) == 0x3;
@@ -3794,6 +3800,13 @@ int sata_link_hardreset(struct ata_link *link, const unsigned long *timing,
 		sata_set_spd(link);
 	}
 
+#if defined(CONFIG_ARCH_ALPINE) && defined(CONFIG_AHCI_ALPINE)
+	if (al_ahci_sss_wa_needed(link->ap->host->dev)) {
+		rc = al_sata_link_hardreset(link, timing, deadline);
+		if (rc)
+			goto out;
+	} else {
+#endif
 	/* issue phy wake/reset */
 	if ((rc = sata_scr_read(link, SCR_CONTROL, &scontrol)))
 		goto out;
@@ -3816,6 +3829,9 @@ int sata_link_hardreset(struct ata_link *link, const unsigned long *timing,
 	if (ata_phys_link_offline(link))
 		goto out;
 
+#if defined(CONFIG_ARCH_ALPINE) && defined(CONFIG_AHCI_ALPINE)
+	}
+#endif
 	/* Link is online.  From this point, -ENODEV too is an error. */
 	if (online)
 		*online = true;

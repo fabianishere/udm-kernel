@@ -429,10 +429,10 @@ TRACE_EVENT(ext4_da_write_pages,
 		__entry->sync_mode	= wbc->sync_mode;
 	),
 
-	TP_printk("dev %d,%d ino %lu first_page %lu nr_to_write %ld "
+	TP_printk("dev %d,%d ino %lu first_page %llu nr_to_write %ld "
 		  "sync_mode %d",
 		  MAJOR(__entry->dev), MINOR(__entry->dev),
-		  (unsigned long) __entry->ino, __entry->first_page,
+		  (unsigned long) __entry->ino, (unsigned long long)__entry->first_page,
 		  __entry->nr_to_write, __entry->sync_mode)
 );
 

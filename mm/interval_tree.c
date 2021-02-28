@@ -11,18 +11,18 @@
 #include <linux/rmap.h>
 #include <linux/interval_tree_generic.h>
 
-static inline unsigned long vma_start_pgoff(struct vm_area_struct *v)
+static inline pgoff_t vma_start_pgoff(struct vm_area_struct *v)
 {
 	return v->vm_pgoff;
 }
 
-static inline unsigned long vma_last_pgoff(struct vm_area_struct *v)
+static inline pgoff_t vma_last_pgoff(struct vm_area_struct *v)
 {
 	return v->vm_pgoff + ((v->vm_end - v->vm_start) >> PAGE_SHIFT) - 1;
 }
 
 INTERVAL_TREE_DEFINE(struct vm_area_struct, shared.rb,
-		     unsigned long, shared.rb_subtree_last,
+		     pgoff_t, shared.rb_subtree_last,
 		     vma_start_pgoff, vma_last_pgoff,, vma_interval_tree)
 
 /* Insert node immediately after prev in the interval tree */
@@ -32,7 +32,7 @@ void vma_interval_tree_insert_after(struct vm_area_struct *node,
 {
 	struct rb_node **link;
 	struct vm_area_struct *parent;
-	unsigned long last = vma_last_pgoff(node);
+	pgoff_t last = vma_last_pgoff(node);
 
 	VM_BUG_ON_VMA(vma_start_pgoff(node) != vma_start_pgoff(prev), node);
 
@@ -69,7 +69,7 @@ static inline unsigned long avc_last_pgoff(struct anon_vma_chain *avc)
 	return vma_last_pgoff(avc->vma);
 }
 
-INTERVAL_TREE_DEFINE(struct anon_vma_chain, rb, unsigned long, rb_subtree_last,
+INTERVAL_TREE_DEFINE(struct anon_vma_chain, rb, pgoff_t, rb_subtree_last,
 		     avc_start_pgoff, avc_last_pgoff,
 		     static inline, __anon_vma_interval_tree)
 
@@ -91,14 +91,14 @@ void anon_vma_interval_tree_remove(struct anon_vma_chain *node,
 
 struct anon_vma_chain *
 anon_vma_interval_tree_iter_first(struct rb_root *root,
-				  unsigned long first, unsigned long last)
+				  pgoff_t first, pgoff_t last)
 {
 	return __anon_vma_interval_tree_iter_first(root, first, last);
 }
 
 struct anon_vma_chain *
 anon_vma_interval_tree_iter_next(struct anon_vma_chain *node,
-				 unsigned long first, unsigned long last)
+				 pgoff_t first, pgoff_t last)
 {
 	return __anon_vma_interval_tree_iter_next(node, first, last);
 }

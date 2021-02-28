@@ -154,6 +154,17 @@ config BRIDGE_EBT_VLAN
 	  802.1Q vlan fields.
 
 	  To compile it as a module, choose M here.  If unsure, say N.
+
+config BRIDGE_EBT_SET
+	tristate "ebt: set support"
+	depends on IP_SET
+	help
+	  This option adds set match.
+
+	  Using this match, you can match
+	  elements in the sets created by ipset(8).
+
+	  To compile it as a module, choose M here.  If unsure, say N.
 #
 # targets
 #

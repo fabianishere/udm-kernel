@@ -138,7 +138,8 @@ enum {
 #define RTM_DELNSID RTM_DELNSID
 	RTM_GETNSID = 90,
 #define RTM_GETNSID RTM_GETNSID
-
+	RTM_LOOP = 91,
+#define RTM_LOOP RTM_LOOP
 	__RTM_MAX,
 #define RTM_MAX		(((__RTM_MAX + 3) & ~3) - 1)
 };
@@ -469,6 +470,21 @@ struct ifinfomsg {
 	int		ifi_index;		/* Link index	*/
 	unsigned	ifi_flags;		/* IFF_* flags	*/
 	unsigned	ifi_change;		/* IFF_* change mask */
+};
+
+/*
+ * struct phymsg
+ * passes ethernet phy level information
+ */
+
+struct phymsg {
+	unsigned char switch_idx;
+	unsigned char port_idx;
+	unsigned char status;
+};
+
+struct loopmsg {
+	unsigned char loop;
 };
 
 /********************************************************************

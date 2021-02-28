@@ -269,6 +269,64 @@ EXPORT_SYMBOL_GPL(kernel_power_off);
 
 static DEFINE_MUTEX(reboot_mutex);
 
+
+static void print_reboot_calling_pids(unsigned int cmd)
+{
+	struct task_struct *task;
+	char *pre_cmd;
+
+	switch (cmd) {
+	case LINUX_REBOOT_CMD_CAD_ON:
+	case LINUX_REBOOT_CMD_CAD_OFF:
+		// ignore the C_A_D setters
+		return;
+	}
+	// inverted commands are used only to print task pids
+	switch (~cmd) {
+	case LINUX_REBOOT_CMD_RESTART:
+	case LINUX_REBOOT_CMD_HALT:
+	case LINUX_REBOOT_CMD_CAD_ON:
+	case LINUX_REBOOT_CMD_CAD_OFF:
+	case LINUX_REBOOT_CMD_POWER_OFF:
+	case LINUX_REBOOT_CMD_RESTART2:
+	case LINUX_REBOOT_CMD_SW_SUSPEND:
+	case LINUX_REBOOT_CMD_KEXEC:
+		pre_cmd = "pre-";
+		cmd = ~cmd;
+		break;
+	default:
+		pre_cmd = "";
+		break;
+	}
+	pr_emerg("%scmd=%08x\n", pre_cmd, cmd);
+
+	for (task = current; task; task = task->real_parent) {
+		char * cmd_ptr;
+		char cmd_buf[128];
+		int cmd_len = get_cmdline(task, cmd_buf, sizeof(cmd_buf) - 1);
+		// strip off all tailing null chars
+		while (cmd_len > 0 && (cmd_buf[cmd_len - 1] == '\0')) {
+			cmd_len--;
+		}
+		// turn all null chars to spaces
+		for (cmd_ptr = cmd_buf; cmd_len > 0; cmd_ptr++, cmd_len--) {
+			if (*cmd_ptr == '\0') {
+				*cmd_ptr = ' ';
+			}
+		}
+		*cmd_ptr = '\0';
+		cmd_ptr = cmd_buf;
+		if (*cmd_ptr == '\0') {
+			// fallback to task->comm
+			cmd_ptr = task->comm;
+		}
+
+		pr_emerg("  called by: [%5d]%s\n", task_pid_nr(task), cmd_buf);
+		if (task == task->real_parent)
+			break;
+	}
+}
+
 /*
  * Reboot system call: for obvious reasons only root may call it,
  * and even root needs to set up some magic numbers in the registers
@@ -296,6 +354,7 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 			magic2 != LINUX_REBOOT_MAGIC2C))
 		return -EINVAL;
 
+	print_reboot_calling_pids(cmd);
 	/*
 	 * If pid namespaces are enabled and the current task is in a child
 	 * pid_namespace, the command is handled by reboot_pid_ns() which will

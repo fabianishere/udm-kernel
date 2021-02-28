@@ -556,6 +556,9 @@ NETSTAT_ENTRY(tx_heartbeat_errors);
 NETSTAT_ENTRY(tx_window_errors);
 NETSTAT_ENTRY(rx_compressed);
 NETSTAT_ENTRY(tx_compressed);
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+NETSTAT_ENTRY(rx_lldp_dropped);
+#endif
 
 static struct attribute *netstat_attrs[] = {
 	&dev_attr_rx_packets.attr,
@@ -581,6 +584,9 @@ static struct attribute *netstat_attrs[] = {
 	&dev_attr_tx_window_errors.attr,
 	&dev_attr_rx_compressed.attr,
 	&dev_attr_tx_compressed.attr,
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+	&dev_attr_rx_lldp_dropped.attr,
+#endif
 	NULL
 };
 

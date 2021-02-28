@@ -30,8 +30,16 @@ ebt_mark_tg(struct sk_buff *skb, const struct xt_action_param *par)
 		skb->mark |= info->mark;
 	else if (action == MARK_AND_VALUE)
 		skb->mark &= info->mark;
-	else
+	else if (action == MARK_XOR_VALUE)
 		skb->mark ^= info->mark;
+	else if (action == MARK_UBNT_SET_VALUE)
+		skb->ubnt_mark = info->mark;
+	else if (action == MARK_UBNT_OR_VALUE)
+		skb->ubnt_mark |= info->mark;
+	else if (action == MARK_UBNT_AND_VALUE)
+		skb->ubnt_mark &= info->mark;
+	else if (action == MARK_UBNT_XOR_VALUE)
+		skb->ubnt_mark ^= info->mark;
 
 	return info->target | ~EBT_VERDICT_BITS;
 }
@@ -48,7 +56,9 @@ static int ebt_mark_tg_check(const struct xt_tgchk_param *par)
 		return -EINVAL;
 	tmp = info->target & ~EBT_VERDICT_BITS;
 	if (tmp != MARK_SET_VALUE && tmp != MARK_OR_VALUE &&
-	    tmp != MARK_AND_VALUE && tmp != MARK_XOR_VALUE)
+	    tmp != MARK_AND_VALUE && tmp != MARK_XOR_VALUE &&
+	    tmp != MARK_UBNT_SET_VALUE && tmp != MARK_UBNT_OR_VALUE &&
+	    tmp != MARK_UBNT_AND_VALUE && tmp != MARK_UBNT_XOR_VALUE)
 		return -EINVAL;
 	return 0;
 }

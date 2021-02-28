@@ -12,6 +12,10 @@
 #define MARK_OR_VALUE  (0xffffffe0)
 #define MARK_AND_VALUE (0xffffffd0)
 #define MARK_XOR_VALUE (0xffffffc0)
+#define MARK_UBNT_SET_VALUE (0xffffffb0)
+#define MARK_UBNT_OR_VALUE (0xffffffa0)
+#define MARK_UBNT_AND_VALUE (0xffffff90)
+#define MARK_UBNT_XOR_VALUE (0xffffff80)
 
 struct ebt_mark_t_info {
 	unsigned long mark;

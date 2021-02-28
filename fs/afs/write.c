@@ -280,13 +280,13 @@ static void afs_kill_pages(struct afs_vnode *vnode, bool error,
 	struct pagevec pv;
 	unsigned count, loop;
 
-	_enter("{%x:%u},%lx-%lx",
-	       vnode->fid.vid, vnode->fid.vnode, first, last);
+	_enter("{%x:%u},%llx-%llx",
+	       vnode->fid.vid, vnode->fid.vnode, (unsigned long long)first, (unsigned long long)last);
 
 	pagevec_init(&pv, 0);
 
 	do {
-		_debug("kill %lx-%lx", first, last);
+		_debug("kill %llx-%llx", (unsigned long long)first, (unsigned long long)last);
 
 		count = last - first + 1;
 		if (count > PAGEVEC_SIZE)

@@ -1606,7 +1606,7 @@ static struct btrfs_root *btrfs_lookup_fs_root(struct btrfs_fs_info *fs_info,
 
 	spin_lock(&fs_info->fs_roots_radix_lock);
 	root = radix_tree_lookup(&fs_info->fs_roots_radix,
-				 (unsigned long)root_id);
+				 (rdx_t)root_id);
 	spin_unlock(&fs_info->fs_roots_radix_lock);
 	return root;
 }
@@ -1622,7 +1622,7 @@ int btrfs_insert_fs_root(struct btrfs_fs_info *fs_info,
 
 	spin_lock(&fs_info->fs_roots_radix_lock);
 	ret = radix_tree_insert(&fs_info->fs_roots_radix,
-				(unsigned long)root->root_key.objectid,
+				(rdx_t)root->root_key.objectid,
 				root);
 	if (ret == 0)
 		set_bit(BTRFS_ROOT_IN_RADIX, &root->state);
@@ -3602,7 +3602,7 @@ void btrfs_drop_and_free_fs_root(struct btrfs_fs_info *fs_info,
 {
 	spin_lock(&fs_info->fs_roots_radix_lock);
 	radix_tree_delete(&fs_info->fs_roots_radix,
-			  (unsigned long)root->root_key.objectid);
+			  (rdx_t)root->root_key.objectid);
 	spin_unlock(&fs_info->fs_roots_radix_lock);
 
 	if (btrfs_root_refs(&root->root_item) == 0)

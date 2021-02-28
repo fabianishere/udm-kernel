@@ -1,9 +1,15 @@
 #ifndef _ASM_FIXMAP_H
 #define _ASM_FIXMAP_H
 
+#if defined(CONFIG_ARM_PAGE_SIZE_LARGE) && defined(CONFIG_HIGHMEM)
+#define FIXADDR_START		0xff400000UL
+#define FIXADDR_END		0xff800000UL
+#else
 #define FIXADDR_START		0xffc00000UL
 #define FIXADDR_END		0xfff00000UL
+#endif
 #define FIXADDR_TOP		(FIXADDR_END - PAGE_SIZE)
+
 
 #include <asm/kmap_types.h>
 

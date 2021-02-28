@@ -1,0 +1,19 @@
+* Serial General Purpose Output (SGPO) bus.
+
+Properties:
+- compatible: "al,alpine-sgpo"
+
+- reg: The base address of the SGPO unit's register bank.
+
+- gpio-controller: This is a GPIO controller.
+
+- #gpio-cells: Must be <2>.  The first cell is the GPIO pin.
+
+Example:
+	sgpo: sgpo {
+		#gpio-cells = <2>;
+		compatible = "al,alpine-sgpo";
+		gpio-controller;
+		reg = <0x0 0xfd8b4000 0x0 0x5000>;
+	};
+

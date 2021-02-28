@@ -6,6 +6,7 @@
 # GNU General Public License.
 #
 
+
 obj-$(CONFIG_EDAC)			:= edac_stub.o
 obj-$(CONFIG_EDAC_MM_EDAC)		+= edac_core.o
 
@@ -68,3 +69,7 @@ obj-$(CONFIG_EDAC_OCTEON_PCI)		+= octeon_edac-pci.o
 
 obj-$(CONFIG_EDAC_ALTERA_MC)		+= altera_edac.o
 obj-$(CONFIG_EDAC_SYNOPSYS)		+= synopsys_edac.o
+include $(srctree)/drivers/soc/alpine/alpine_hal.mk
+obj-$(CONFIG_EDAC_ALPINE_SYSTEM_FABRIC)	+= alpine_system_fabric_edac.o
+obj-$(CONFIG_EDAC_ALPINE_L1)		+= alpine_l1_edac.o
+obj-$(CONFIG_EDAC_ALPINE_L2)		+= alpine_l2_edac.o

@@ -53,7 +53,7 @@ ENTRY(v7wbi_flush_user_tlb_range)
 #endif
 	ALT_UP(mcr	p15, 0, r0, c8, c7, 1)	@ TLB invalidate U MVA
 
-	add	r0, r0, #PAGE_SZ
+	add	r0, r0, #HW_PAGE_SIZE
 	cmp	r0, r1
 	blo	1b
 	dsb	ish
@@ -81,7 +81,7 @@ ENTRY(v7wbi_flush_kern_tlb_range)
 	ALT_SMP(mcr	p15, 0, r0, c8, c3, 1)	@ TLB invalidate U MVA (shareable)
 #endif
 	ALT_UP(mcr	p15, 0, r0, c8, c7, 1)	@ TLB invalidate U MVA
-	add	r0, r0, #PAGE_SZ
+	add	r0, r0, #HW_PAGE_SIZE
 	cmp	r0, r1
 	blo	1b
 	dsb	ish

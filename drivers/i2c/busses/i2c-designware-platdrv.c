@@ -187,6 +187,17 @@ static int dw_i2c_probe(struct platform_device *pdev)
 	if (has_acpi_companion(&pdev->dev)) {
 		dw_i2c_acpi_configure(pdev);
 	} else if (pdev->dev.of_node) {
+		u32 val;
+
+		if (!of_property_read_u32(pdev->dev.of_node, "i2c-ss-scl-hcnt-raw", &val))
+			dev->ss_hcnt = val;
+		if (!of_property_read_u32(pdev->dev.of_node, "i2c-ss-scl-lcnt-raw", &val))
+			dev->ss_lcnt = val;
+		if (!of_property_read_u32(pdev->dev.of_node, "i2c-fs-scl-hcnt-raw", &val))
+			dev->fs_hcnt = val;
+		if (!of_property_read_u32(pdev->dev.of_node, "i2c-fs-scl-lcnt-raw", &val))
+			dev->fs_lcnt = val;
+
 		of_property_read_u32(pdev->dev.of_node,
 					"i2c-sda-hold-time-ns", &ht);
 

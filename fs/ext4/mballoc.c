@@ -832,7 +832,7 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
 	char *bitmap;
 	struct ext4_group_info *grinfo;
 
-	mb_debug(1, "init page %lu\n", page->index);
+	mb_debug(1, "init page %llu\n", (unsigned long long)page->index);
 
 	inode = page->mapping->host;
 	sb = inode->i_sb;
@@ -914,8 +914,8 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
 		if ((first_block + i) & 1) {
 			/* this is block of buddy */
 			BUG_ON(incore == NULL);
-			mb_debug(1, "put buddy for group %u in page %lu/%x\n",
-				group, page->index, i * blocksize);
+			mb_debug(1, "put buddy for group %u in page %llu/%x\n",
+				group, (unsigned long long)page->index, i * blocksize);
 			trace_ext4_mb_buddy_bitmap_load(sb, group);
 			grinfo = ext4_get_group_info(sb, group);
 			grinfo->bb_fragments = 0;
@@ -934,8 +934,8 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
 		} else {
 			/* this is block of bitmap */
 			BUG_ON(incore != NULL);
-			mb_debug(1, "put bitmap for group %u in page %lu/%x\n",
-				group, page->index, i * blocksize);
+			mb_debug(1, "put bitmap for group %u in page %llu/%x\n",
+				group, (unsigned long long)page->index, i * blocksize);
 			trace_ext4_mb_bitmap_load(sb, group);
 
 			/* see comments in ext4_mb_put_pa() */

@@ -466,4 +466,10 @@ config MIPS_EJTAG_FDC_KGDB_CHAN
 	help
 	  FDC channel number to use for KGDB.
 
+config AL_TRACE
+	bool "AL Trace"
+	depends on SERIAL_8250
+	default n
+	help
+	  This enables 8250 serial data to be written to AL serial trace as well
 endif # TTY

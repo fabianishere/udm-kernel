@@ -34,6 +34,7 @@ struct nf_tcp_net {
 	unsigned int tcp_loose;
 	unsigned int tcp_be_liberal;
 	unsigned int tcp_max_retrans;
+	unsigned int tcp_window_tracking;
 };
 
 enum udp_conntrack {

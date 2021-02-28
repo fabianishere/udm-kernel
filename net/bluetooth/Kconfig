@@ -99,4 +99,13 @@ config BT_DEBUGFS
 	  Provide extensive information about internal Bluetooth states
 	  in debugfs.
 
+config BT_NORDIC_QUIRK_LOOKUP_FIX
+	bool "Quirk for Nordic to lookup device"
+	depends on BT
+	help
+	  nRF82532 only provides link type SCO instead of ACL which results in
+	  HCI layer not able to lookup devices correctly. This feature is to fix
+	  this case.
+
+
 source "drivers/bluetooth/Kconfig"

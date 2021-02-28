@@ -658,7 +658,7 @@ __setup("netdev=", netdev_boot_setup);
 			    Device Interface Subroutines
 
 *******************************************************************************/
-
+int netdev_skb_tstamp __read_mostly = 1;
 /**
  *	dev_get_iflink	- get 'iflink' value of a interface
  *	@dev: targeted interface
@@ -1682,12 +1682,13 @@ static inline void net_timestamp_set(struct sk_buff *skb)
 {
 	skb->tstamp.tv64 = 0;
 	if (static_key_false(&netstamp_needed))
-		__net_timestamp(skb);
+		if (netdev_skb_tstamp)
+			__net_timestamp(skb);
 }
 
 #define net_timestamp_check(COND, SKB)			\
 	if (static_key_false(&netstamp_needed)) {		\
-		if ((COND) && !(SKB)->tstamp.tv64)	\
+		if (netdev_skb_tstamp && (COND) && !(SKB)->tstamp.tv64)	\
 			__net_timestamp(SKB);		\
 	}						\
 
@@ -2928,6 +2929,11 @@ EXPORT_SYMBOL(dev_loopback_xmit);
  *      the BH enable code must have IRQs enabled so that it will not deadlock.
  *          --BLG
  */
+
+//: UBNT frame id
+void (*ubnt_frame_id_check)(struct sk_buff *skb, struct net_device *dev);
+EXPORT_SYMBOL(ubnt_frame_id_check);
+
 static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 {
 	struct net_device *dev = skb->dev;
@@ -2939,6 +2945,9 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 
 	if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_SCHED_TSTAMP))
 		__skb_tstamp_tx(skb, NULL, skb->sk, SCM_TSTAMP_SCHED);
+
+	if (ubnt_frame_id_check)
+		ubnt_frame_id_check(skb, dev);
 
 	/* Disable soft irqs for various locks below. Also
 	 * stops preemption for RCU.
@@ -3785,7 +3794,18 @@ ncls:
 			ret = pt_prev->func(skb, skb->dev, pt_prev, orig_dev);
 	} else {
 drop:
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+		switch (skb->protocol) {
+		case htons(ETH_P_LLDP):
+			atomic_long_inc(&skb->dev->rx_lldp_dropped);
+			break;
+		default:
+			atomic_long_inc(&skb->dev->rx_dropped);
+			break;
+		}
+#else
 		atomic_long_inc(&skb->dev->rx_dropped);
+#endif
 		kfree_skb(skb);
 		/* Jamal, now you will not able to escape explaining
 		 * me how you were going to use this. :-)
@@ -6728,6 +6748,9 @@ struct rtnl_link_stats64 *dev_get_stats(struct net_device *dev,
 	}
 	storage->rx_dropped += atomic_long_read(&dev->rx_dropped);
 	storage->tx_dropped += atomic_long_read(&dev->tx_dropped);
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+	storage->rx_lldp_dropped += atomic_long_read(&dev->rx_lldp_dropped);
+#endif
 	return storage;
 }
 EXPORT_SYMBOL(dev_get_stats);

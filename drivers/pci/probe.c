@@ -1106,6 +1106,20 @@ int pci_cfg_space_size(struct pci_dev *dev)
 
 #define LEGACY_IO_RESOURCE	(IORESOURCE_IO | IORESOURCE_PCI_FIXED)
 
+static int multifunction_disabled;
+
+static int __init pci_multifunction_disable(char *str)
+{
+	if (!strcmp(str, "off")) {
+		multifunction_disabled = 1;
+		printk(KERN_INFO "PCI multifunction is disabled\n");
+	}
+
+	return 1;
+}
+
+__setup("pci_multifunction=", pci_multifunction_disable);
+
 /**
  * pci_setup_device - fill in class and map information of a device
  * @dev: the device structure to fill
@@ -1133,7 +1147,7 @@ int pci_setup_device(struct pci_dev *dev)
 	dev->dev.parent = dev->bus->bridge;
 	dev->dev.bus = &pci_bus_type;
 	dev->hdr_type = hdr_type & 0x7f;
-	dev->multifunction = !!(hdr_type & 0x80);
+	dev->multifunction = !multifunction_disabled && !!(hdr_type & 0x80);
 	dev->error_state = pci_channel_io_normal;
 	set_pcie_port_type(dev);
 
@@ -1141,9 +1155,10 @@ int pci_setup_device(struct pci_dev *dev)
 		if (PCI_SLOT(dev->devfn) == slot->number)
 			dev->slot = slot;
 
-	/* Assume 32-bit PCI; let 64-bit PCI cards (which are far rarer)
-	   set this higher, assuming the system even supports it.  */
-	dev->dma_mask = 0xffffffff;
+	/* Set to PHYS_MASK to comply with the selected arch and allow
+	 * accessing all physical memory with DMA
+	 */
+	dev->dma_mask = PHYS_MASK;
 
 	dev_set_name(&dev->dev, "%04x:%02x:%02x.%d", pci_domain_nr(dev->bus),
 		     dev->bus->number, PCI_SLOT(dev->devfn),
@@ -1552,7 +1567,10 @@ void pci_device_add(struct pci_dev *dev, struct pci_bus *bus)
 	set_dev_node(&dev->dev, pcibus_to_node(bus));
 	dev->dev.dma_mask = &dev->dma_mask;
 	dev->dev.dma_parms = &dev->dma_parms;
-	dev->dev.coherent_dma_mask = 0xffffffffull;
+	/* Set to PHYS_MASK to comply with the selected arch and allow
+	 * accessing all physical memory with DMA
+	 */
+	dev->dev.coherent_dma_mask = PHYS_MASK;
 	of_pci_dma_configure(dev);
 
 	pci_set_dma_max_seg_size(dev, 65536);
@@ -1612,6 +1630,9 @@ static unsigned next_fn(struct pci_bus *bus, struct pci_dev *dev, unsigned fn)
 	int pos;
 	u16 cap = 0;
 	unsigned next_fn;
+
+	if (multifunction_disabled)
+		return 0;
 
 	if (pci_ari_enabled(bus)) {
 		if (!dev)

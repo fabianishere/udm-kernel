@@ -239,9 +239,9 @@ static inline struct page *page_cache_alloc_readahead(struct address_space *x)
 typedef int filler_t(void *, struct page *);
 
 pgoff_t page_cache_next_hole(struct address_space *mapping,
-			     pgoff_t index, unsigned long max_scan);
+			     pgoff_t index, rdx_t max_scan);
 pgoff_t page_cache_prev_hole(struct address_space *mapping,
-			     pgoff_t index, unsigned long max_scan);
+			     pgoff_t index, rdx_t max_scan);
 
 #define FGP_ACCESSED		0x00000001
 #define FGP_LOCK		0x00000002

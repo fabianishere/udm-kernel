@@ -632,7 +632,7 @@ static const struct vm_operations_struct uio_physical_vm_ops = {
 #endif
 };
 
-static int uio_mmap_physical(struct vm_area_struct *vma)
+static int uio_mmap_physical(struct vm_area_struct *vma, int cacheable)
 {
 	struct uio_device *idev = vma->vm_private_data;
 	int mi = uio_find_mem_index(vma);
@@ -647,7 +647,9 @@ static int uio_mmap_physical(struct vm_area_struct *vma)
 		return -EINVAL;
 
 	vma->vm_ops = &uio_physical_vm_ops;
-	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+
+	if (!cacheable)
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 
 	/*
 	 * We cannot use the vm_iomap_memory() helper here,
@@ -695,11 +697,13 @@ static int uio_mmap(struct file *filep, struct vm_area_struct *vma)
 
 	switch (idev->info->mem[mi].memtype) {
 		case UIO_MEM_PHYS:
-			return uio_mmap_physical(vma);
+			return uio_mmap_physical(vma, 0);
 		case UIO_MEM_LOGICAL:
 		case UIO_MEM_VIRTUAL:
 			return uio_mmap_logical(vma);
-		default:
+	        case UIO_MEM_PHYS_CACHEABLE:
+			return uio_mmap_physical(vma, 1);
+	default:
 			return -EINVAL;
 	}
 }

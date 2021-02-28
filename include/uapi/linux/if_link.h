@@ -35,6 +35,11 @@ struct rtnl_link_stats {
 	/* for cslip etc */
 	__u32	rx_compressed;
 	__u32	tx_compressed;
+
+	/* extra */
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+	__u32	rx_lldp_dropped;
+#endif
 };
 
 /* The main device statistics structure */
@@ -68,6 +73,11 @@ struct rtnl_link_stats64 {
 	/* for cslip etc */
 	__u64	rx_compressed;
 	__u64	tx_compressed;
+
+	/* extra */
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+	__u64	rx_lldp_dropped;
+#endif
 };
 
 /* The struct should be in sync with struct ifmap */

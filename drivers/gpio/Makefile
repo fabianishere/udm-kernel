@@ -1,5 +1,9 @@
 # generic gpio support: platform drivers, dedicated expander chips, etc
 
+-include $(HAL_TOP)/file_list_base.mk
+include $(srctree)/drivers/soc/alpine/alpine_hal.mk
+KBUILD_CFLAGS_KERNEL += $(HAL_USER_INCLUDE_PATH)
+
 ccflags-$(CONFIG_DEBUG_GPIO)	+= -DDEBUG
 
 obj-$(CONFIG_GPIO_DEVRES)	+= devres.o
@@ -112,3 +116,5 @@ obj-$(CONFIG_GPIO_XILINX)	+= gpio-xilinx.o
 obj-$(CONFIG_GPIO_XTENSA)	+= gpio-xtensa.o
 obj-$(CONFIG_GPIO_ZEVIO)	+= gpio-zevio.o
 obj-$(CONFIG_GPIO_ZYNQ)		+= gpio-zynq.o
+obj-$(CONFIG_GPIO_AL_SGPO)	+= gpio-alpine-sgpo.o
+

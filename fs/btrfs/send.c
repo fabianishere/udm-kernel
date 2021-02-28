@@ -1968,7 +1968,7 @@ static int name_cache_insert(struct send_ctx *sctx,
 	struct list_head *nce_head;
 
 	nce_head = radix_tree_lookup(&sctx->name_cache,
-			(unsigned long)nce->ino);
+			(rdx_t)nce->ino);
 	if (!nce_head) {
 		nce_head = kmalloc(sizeof(*nce_head), GFP_NOFS);
 		if (!nce_head) {
@@ -1997,7 +1997,7 @@ static void name_cache_delete(struct send_ctx *sctx,
 	struct list_head *nce_head;
 
 	nce_head = radix_tree_lookup(&sctx->name_cache,
-			(unsigned long)nce->ino);
+			(rdx_t)nce->ino);
 	if (!nce_head) {
 		btrfs_err(sctx->send_root->fs_info,
 	      "name_cache_delete lookup failed ino %llu cache size %d, leaking memory",
@@ -2012,7 +2012,7 @@ static void name_cache_delete(struct send_ctx *sctx,
 	 * We may not get to the final release of nce_head if the lookup fails
 	 */
 	if (nce_head && list_empty(nce_head)) {
-		radix_tree_delete(&sctx->name_cache, (unsigned long)nce->ino);
+		radix_tree_delete(&sctx->name_cache, (rdx_t)nce->ino);
 		kfree(nce_head);
 	}
 }
@@ -2023,7 +2023,7 @@ static struct name_cache_entry *name_cache_search(struct send_ctx *sctx,
 	struct list_head *nce_head;
 	struct name_cache_entry *cur;
 
-	nce_head = radix_tree_lookup(&sctx->name_cache, (unsigned long)ino);
+	nce_head = radix_tree_lookup(&sctx->name_cache, (rdx_t)ino);
 	if (!nce_head)
 		return NULL;
 

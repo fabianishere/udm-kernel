@@ -457,9 +457,10 @@ static int crypt_extent(struct ecryptfs_crypt_stat *crypt_stat,
 	rc = crypt_scatterlist(crypt_stat, &dst_sg, &src_sg, extent_size,
 			       extent_iv, op);
 	if (rc < 0) {
-		printk(KERN_ERR "%s: Error attempting to crypt page with "
-		       "page_index = [%ld], extent_offset = [%ld]; "
-		       "rc = [%d]\n", __func__, page_index, extent_offset, rc);
+		printk(KERN_ERR "%s: Error attempting to encrypt page with "
+		       "page->index = [%lld], extent_offset = [%ld]; "
+		       "rc = [%d]\n", __func__, (unsigned long long)page_index, extent_offset,
+		       rc);
 		goto out;
 	}
 	rc = 0;

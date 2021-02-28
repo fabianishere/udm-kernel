@@ -93,12 +93,45 @@ ENTRY(cpu_v7_set_pte_ext)
 	tst	ip, #1 << (55 - 32) | 1 << (58 - 32)
 	orrne	rl, #PTE_AP2
 	biceq	rl, #PTE_AP2
-
-1:	strd	r2, r3, [r0]
+1:
+#if (HW_PAGES_PER_PAGE >= 2)
+	/* note: the first address is PAGE_SIZE-aligned
+	 * The difference between the first and last
+	 * address we map is one entry less than PAGE_SIZE
+	 * so we don't need to take carry into account
+	 */
+	add		r1, r0, #((HW_PAGES_PER_PAGE)<<3)
+	cmp		rl, #0
+	bne 3f
+	/* pte is zero, write 16 zeroes */
+2:	sub r1, r1, #8
+	strd	rl, rh, [r1]
+	ALT_SMP(W(nop))
+	ALT_UP (mcr	p15, 0, r1, c7, c10, 1)		@ flush_pte
+	cmp r1, r0
+	bgt 2b
+	b 5f
+3:	/* pte is not zero. Write 16 consecutive vals */
+#if (HW_PAGES_PER_PAGE >= 16)
+	orr		rh, rh, #1 << (52-32)	@contigous_bit
+#endif /* HW_PAGES_PER_PAGE >= 16 */
+	add		rl, rl, #(PAGE_SIZE)
+4:	sub r1, r1, #8
+	sub rl, rl, #(HW_PAGE_SIZE)
+	strd	rl, rh, [r1]
+	ALT_SMP(W(nop))
+	ALT_UP (mcr	p15, 0, r1, c7, c10, 1)		@ flush_pte
+	cmp r1, r0
+	bgt 4b
+5:	/*done looping */
+	mov r1, #0
+#else
+	strd	rl, rh, [r0]
 	ALT_SMP(W(nop))
 	ALT_UP (mcr	p15, 0, r0, c7, c10, 1)		@ flush_pte
-#endif
-	ret	lr
+#endif /* HW_PAGES_PER_PAGE >= 2 */
+#endif /*CONFIG_MMU*/
+	ret lr
 ENDPROC(cpu_v7_set_pte_ext)
 
 	/*

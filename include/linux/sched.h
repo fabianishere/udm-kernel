@@ -363,6 +363,7 @@ extern void show_regs(struct pt_regs *);
  * trace (or NULL if the entire call-chain of the task should be shown).
  */
 extern void show_stack(struct task_struct *task, unsigned long *sp);
+extern void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk);
 
 extern void cpu_init (void);
 extern void trap_init(void);

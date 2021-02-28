@@ -1,0 +1,18 @@
+#
+# PoE device configuration
+#
+config POE_BCM59111
+    bool "bcm59111 driver"
+    help
+        support BCM59111 driver.
+
+config UBNT_POE_DEV
+    bool "UBNT PoE device abstraction layer"
+    help
+        UBNT PoE abstraction layer.
+
+config UBNT_POE_S2P
+    bool "UBNT PoE s2p driver"
+    help
+        UBNT PoE s2p driver.
+

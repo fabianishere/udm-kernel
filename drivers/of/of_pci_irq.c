@@ -106,7 +106,7 @@ int of_irq_parse_and_map_pci(const struct pci_dev *dev, u8 slot, u8 pin)
 
 	ret = of_irq_parse_pci(dev, &oirq);
 	if (ret) {
-		dev_err(&dev->dev, "of_irq_parse_pci() failed with rc=%d\n", ret);
+		dev_dbg(&dev->dev, "of_irq_parse_pci() failed with rc=%d\n", ret);
 		return 0; /* Proper return code 0 == NO_IRQ */
 	}
 

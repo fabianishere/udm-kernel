@@ -94,6 +94,9 @@ SECTIONS
 			*(.exception.text)
 			__exception_text_end = .;
 			IRQENTRY_TEXT
+#ifdef CONFIG_FUNC_REORDER
+#include "functionlist"
+#endif
 			TEXT_TEXT
 			SCHED_TEXT
 			LOCK_TEXT

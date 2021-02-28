@@ -1,0 +1,117 @@
+/**
+ * @mainpage HAL SW package
+ * @section intro_sec Introduction
+ *
+ * The Hardware Abstraction Layer is a collection of Operating System independent low-level drivers, 
+ * those drivers provide a SW API for the underlying hardware, and OS specific device drivers can use it to provide I/O services.
+ *
+ * Using the HAL drivers for implementing OS specific drivers will significantly reduce the development process.
+ * The HAL drivers save the developer the time, effort and knowledge needed to develop and test the code that directly manages the hardware.
+ * For Alpine, the same HAL has been used for both Linux and U-Boot.
+ *
+ * The following figure demonstrates full architecture of Linux OS driver based on HAL driver:
+ *
+ * @image html OS_HAL_layer.jpg "HAL driver in the OS layers"
+ *
+ *
+ * @section section1 HAL Structure
+ * The HAL software package contains the following components:
+ * - @ref group_udma -
+ *   Provides an HW abstraction layer for handling the UDMA M2S and S2M engines.
+ *   The UDMA HAL was designed to provide a minimal layer between the driver and the underlying hardware, giving the driver all the flexibility to manage the UDMA according to its needs.
+ *   The UDMA HAL contains the following components:
+ *     - @ref group_udma_main - contains the initializations and data path functionalities.
+ *     - @ref group_udma_config - contains functions for various hardware configurations.
+ *     - @ref group_udma_debug - contains debug functions.
+ *     - @ref group_m2m_udma - the M2M UDMA combines M2S and S2M UDMAs, and provides common
+ *       functionality between different DMA's that use M2S and S2M UDMAs; this
+ *       is the case for the RAID and Crypto Acceleration DMAs.
+ *     - @ref group_udma_interrupts - contains initialization and configuration functions for the UDMA I/O fabric interrupt controller.
+ * - @link group_interrupts Common I/O Fabric Interrupt Controller @endlink - Provides helper APIs for programming the common I/O fabric interrupt controller unit found inside various I/O controllers.
+ * - @ref group_eth - Provides the management, configuration and Ethernet frames transmission/reception.
+ * - @ref group_ssm - Provides common API for the Security(crypto), storage(Raid) and memory engines
+ *     - @ref group_raid - Provides the software API for submitting transactions (memory copy, RAID6 parity calculations, etc.).
+ *     - @link group_crypto Crypto Acceleration Engine @endlink - Provides the software API for submitting cryptographic transactions (encryption, decryption, authentications, etc.).
+ *     - @link group_crc_memcpy_doc Crc/memcpy Acceleration Engine @endlink - Provides software API for submitting memory transactions (CRC, checksum, memcpy).
+ * - @ref groupddr - Provides API for management and initialization of the DDR controller and PHY.
+ * - @ref grouppcie - Provides services for initialization, link operations, configuration and access
+ * management.
+ * - @ref group_sys_services -
+ *   The components included in the system services are:
+ *     - @ref group_timer - Provides API for controlling the timer units.
+ *     - @ref group_watchdog - Provides API for controlling the watchdog units.
+ *     - @ref group_thermal_sensor - Provides API for controlling the on-chip thermal sensor.
+ * - @ref group_pbs -
+ *   The components included in the PBS are:
+ *     - @ref group_addr_map - Provides API for adjusting the Physical Address Slave Window (PASW)
+ *		 configuration.
+ *     - @ref group_bootstrap - Provides helper APIs for parsing the bootstrap configuration.
+ *     - @ref group_gpio - Provides API for reading/writing values to GPIO pins, and configuring pins as interrupt source.
+ *     - @ref group_i2c - Provides API for management and sending read/write transactions over the interface.
+ *     - @ref group_spi - Provides API for management and sending read/write transactions over the interface.
+ *     - @ref group_muio_mux - Provides services for selecting the functionality of the chip pins.
+ *     - @ref group_nand - Provides services for management, executing command sequences and reading/writing from/to its data buffer.
+ * - @ref group_ring -
+ *   The components included in the Ring are:
+ *     - @ref grouppll - Provides API for management, setting/getting clock frequencies.
+ * - @ref group_services - Defines the services that used by the other HAL components. The API should be implemented by OS specific component.
+ * - @ref group_common - This layer is a library for common functions that are used by various HAL drivers.
+ *
+ * The following Figure illustrates the HAL structure:
+ * @image html HALs.png "HALs block diagram"
+ *
+ *
+ *
+ * @section section2 File structure
+ * The HAL package is built as following:
+ * - drivers/ - Contains components directory with the Code HAL drivers and hardware register header files, if exist. 
+ * - include/ - Contains components directory with API and the common library header files.
+ * - doc/ - Doxygen API documentation for the HAL package (check for index.html under the html directory).
+ * - License.txt - License file for the HAL package.
+ * - samples/ - Sample code for the OS service layer.
+ * - version.txt - Version file of the HAL.
+ * - Makefile - An example makefile to build the HAL package.
+ *
+ * @section section3 I/O Cache-coherency and address translation working assumption
+ * The HAL layer assumes system with IO cache coherency turned on, if IO Cache coherency is not enabled, 
+ * it is up to the upper layer to take care of all cache coherency management.
+ * The HAL, as the hardware, works with Physical Addresses (or Intermediate Physical address in multi-OS or virtualized environment),
+ * and hence does not support address virtual to physical address (PA)/Intermediate Physical Address (IPA) translations.
+ * To avoid any design mistakes and make the API clear, in any case an PA/IPA address pointers are required (for example when passing pointers to the hardware engines),
+ * the HAL API will specify the address type as al_phy_addr_t.
+ *
+ * @section section4 HAL license
+ * Copyright (C) 2015 Annapurna Labs Ltd.
+ *
+ * This file may be licensed under the terms of the Annapurna Labs Commercial
+ * License Agreement.
+ *
+ * Alternatively, this file can be distributed under the terms of the GNU General
+ * Public License V2 as published by the Free Software Foundation and can be
+ * found at http://www.gnu.org/licenses/gpl-2.0.html
+ *
+ * Alternatively, redistribution and use in source and binary forms, with or
+ * without modification, are permitted provided that the following conditions are
+ * met:
+ *
+ *   *     Redistributions of source code must retain the above copyright notice,
+ * this list of conditions and the following disclaimer.
+ *
+ *   *     Redistributions in binary form must reproduce the above copyright
+ * notice, this list of conditions and the following disclaimer in
+ * the documentation and/or other materials provided with the
+ * distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ *
+ * */

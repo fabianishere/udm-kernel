@@ -105,6 +105,128 @@ static void __do_kernel_fault(struct mm_struct *mm, unsigned long addr,
 	do_exit(SIGKILL);
 }
 
+// Based off of fs/proc/task_mmu.c: pid_of_stack()
+static pid_t pid_of_task_stack(struct task_struct *task,
+				struct vm_area_struct *vma, bool is_pid)
+{
+	pid_t ret = 0;
+
+	rcu_read_lock();
+	task = task_of_stack(task, vma, is_pid);
+	if (task)
+		ret = task_pid_nr_ns(task, ns_of_pid(task_pid(task)));
+	rcu_read_unlock();
+
+	return ret;
+}
+
+// Based off of fs/proc/task_mmu.c: show_map_vma()
+static void show_task_vma(struct task_struct *task, struct vm_area_struct *vma, int is_pid)
+{
+	struct mm_struct *mm = vma->vm_mm;
+	struct file *file = vma->vm_file;
+	vm_flags_t flags = vma->vm_flags;
+	unsigned long ino = 0;
+	unsigned long long pgoff = 0;
+	unsigned long start, end;
+	dev_t dev = 0;
+	const char *name = NULL;
+
+	int printed = 0;
+	char buf[256];
+
+	if (file) {
+		struct inode *inode = file_inode(vma->vm_file);
+		dev = inode->i_sb->s_dev;
+		ino = inode->i_ino;
+		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
+	}
+
+	/* We don't show the stack guard page in /proc/maps */
+	start = vma->vm_start;
+	if (stack_guard_page_start(vma, start))
+		start += PAGE_SIZE;
+	end = vma->vm_end;
+	if (stack_guard_page_end(vma, end))
+		end -= PAGE_SIZE;
+
+	printed += pr_info("%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu ",
+			start,
+			end,
+			flags & VM_READ ? 'r' : '-',
+			flags & VM_WRITE ? 'w' : '-',
+			flags & VM_EXEC ? 'x' : '-',
+			flags & VM_MAYSHARE ? 's' : 'p',
+			pgoff,
+			MAJOR(dev), MINOR(dev), ino);
+
+	/*
+	 * Print the dentry name for named mappings, and a
+	 * special [heap] marker for the heap:
+	 */
+	if (file) {
+		name = d_path(&file->f_path, buf, sizeof(buf));
+		goto done;
+	}
+
+	if (vma->vm_ops && vma->vm_ops->name) {
+		name = vma->vm_ops->name(vma);
+		if (name)
+			goto done;
+	}
+
+	name = arch_vma_name(vma);
+	if (!name) {
+		pid_t tid;
+
+		if (!mm) {
+			name = "[vdso]";
+			goto done;
+		}
+
+		if (vma->vm_start <= mm->brk &&
+			vma->vm_end >= mm->start_brk) {
+			name = "[heap]";
+			goto done;
+		}
+
+		tid = pid_of_task_stack(task, vma, is_pid);
+		if (tid != 0) {
+			/*
+			 * Thread stack in /proc/PID/task/TID/maps or
+			 * the main process stack.
+			 */
+			if (!is_pid || (vma->vm_start <= mm->start_stack &&
+				vma->vm_end >= mm->start_stack)) {
+				name = "[stack]";
+			} else {
+				/* Thread stack in /proc/PID/maps */
+				snprintf(buf, sizeof(buf), "[stack:%d]", tid);
+				name = buf;
+			}
+		}
+	}
+
+done:
+	if (name) {
+		const int width = 50;
+		if (printed < width)
+			printed += pr_cont("%*s%s", width - printed, "", name);
+	}
+	pr_cont("\n");
+}
+
+static void show_task_mmap(struct task_struct *task)
+{
+	struct mm_struct *mm = task->mm;
+	struct vm_area_struct *vma;
+	int left;
+
+	for (vma = mm->mmap, left = mm->map_count; vma && left > 0; vma = vma->vm_next, left--) {
+		show_task_vma(task, vma, 1);
+	}
+}
+
 /*
  * Something tried to access memory that isn't in our memory map. User mode
  * accesses just cause a SIGSEGV
@@ -121,6 +243,7 @@ static void __do_user_fault(struct task_struct *tsk, unsigned long addr,
 			tsk->comm, task_pid_nr(tsk), fault_name(esr), sig,
 			addr, esr);
 		show_pte(tsk->mm, addr);
+		show_task_mmap(tsk);
 		show_regs(regs);
 	}
 
@@ -253,8 +376,11 @@ retry:
 	 * signal first. We do not need to release the mmap_sem because it
 	 * would already be released in __lock_page_or_retry in mm/filemap.c.
 	 */
-	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current))
+	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current)) {
+		if (!user_mode(regs))
+			goto no_context;
 		return 0;
+	}
 
 	/*
 	 * Major/minor page fault accounting is only done on the initial

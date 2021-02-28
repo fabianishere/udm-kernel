@@ -492,4 +492,26 @@ config QCOM_BAM_DMA
 	  Enable support for the QCOM BAM DMA controller.  This controller
 	  provides DMA capabilities for a variety of on-chip devices.
 
+config AL_DMA
+	bool "Annapurna Labs DMA support"
+	depends on ARCH_ALPINE
+	select DMA_ENGINE
+	select ASYNC_TX_ENABLE_CHANNEL_SWITCH
+	select DMA_ENGINE_RAID
+	help
+	  Enable support for the Annapurna Labs DMA and RAID acceleration
+	  engine.
+
+config AL_DMA_STATS
+	bool "Annapurna Labs DMA statistics enabled"
+	depends on AL_DMA
+	help
+	  Enable Annapurna Labs DMA and RAID acceleration engine statistics.
+
+config AL_DMA_PCI_IOV
+	bool "Annapurna Labs DMA Virtual Function enabled"
+	depends on AL_DMA
+	help
+	  Enable Annapurna Labs DMA Virtual Function.
+
 endif

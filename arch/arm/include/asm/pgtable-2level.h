@@ -77,6 +77,7 @@
 #define PTE_HWTABLE_PTRS	(PTRS_PER_PTE)
 #define PTE_HWTABLE_OFF		(PTE_HWTABLE_PTRS * sizeof(pte_t))
 #define PTE_HWTABLE_SIZE	(PTRS_PER_PTE * sizeof(u32))
+#define PTE_HWTABLE_MASK	(~((PTE_HWTABLE_SIZE*2)-1))
 
 /*
  * PMD_SHIFT determines the size of the area a second-level page table can map

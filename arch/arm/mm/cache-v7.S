@@ -15,6 +15,7 @@
 #include <asm/assembler.h>
 #include <asm/errno.h>
 #include <asm/unwind.h>
+#include <asm/page.h>
 
 #include "proc-macros.S"
 

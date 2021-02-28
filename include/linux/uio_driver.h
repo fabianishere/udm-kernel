@@ -41,7 +41,7 @@ struct uio_mem {
 	struct uio_map		*map;
 };
 
-#define MAX_UIO_MAPS	5
+#define MAX_UIO_MAPS	6
 
 struct uio_portio;
 
@@ -128,6 +128,7 @@ extern void uio_event_notify(struct uio_info *info);
 #define UIO_MEM_PHYS	1
 #define UIO_MEM_LOGICAL	2
 #define UIO_MEM_VIRTUAL 3
+#define UIO_MEM_PHYS_CACHEABLE 4
 
 /* defines for uio_port->porttype */
 #define UIO_PORT_NONE	0

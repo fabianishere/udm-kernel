@@ -69,7 +69,7 @@ static int ecryptfs_writepage(struct page *page, struct writeback_control *wbc)
 	rc = ecryptfs_encrypt_page(page);
 	if (rc) {
 		ecryptfs_printk(KERN_WARNING, "Error encrypting "
-				"page (upper index [0x%.16lx])\n", page->index);
+				"page (upper index [0x%.16llx])\n", (unsigned long long)page->index);
 		ClearPageUptodate(page);
 		goto out;
 	}
@@ -237,8 +237,8 @@ out:
 		ClearPageUptodate(page);
 	else
 		SetPageUptodate(page);
-	ecryptfs_printk(KERN_DEBUG, "Unlocking page with index = [0x%.16lx]\n",
-			page->index);
+	ecryptfs_printk(KERN_DEBUG, "Unlocking page with index = [0x%.16llx]\n",
+			(unsigned long long)page->index);
 	unlock_page(page);
 	return rc;
 }
@@ -343,9 +343,9 @@ static int ecryptfs_write_begin(struct file *file,
 				rc = ecryptfs_decrypt_page(page);
 				if (rc) {
 					printk(KERN_ERR "%s: Error decrypting "
-					       "page at index [%ld]; "
+					       "page at index [%lld]; "
 					       "rc = [%d]\n",
-					       __func__, page->index, rc);
+					       __func__, (unsigned long long)page->index, rc);
 					ClearPageUptodate(page);
 					goto out;
 				}
@@ -489,7 +489,7 @@ static int ecryptfs_write_end(struct file *file,
 	int rc;
 
 	ecryptfs_printk(KERN_DEBUG, "Calling fill_zeros_to_end_of_page"
-			"(page w/ index = [0x%.16lx], to = [%d])\n", index, to);
+			"(page w/ index = [0x%.16llx], to = [%d])\n", (unsigned long long)index, to);
 	if (!(crypt_stat->flags & ECRYPTFS_ENCRYPTED)) {
 		rc = ecryptfs_write_lower_page_segment(ecryptfs_inode, page, 0,
 						       to);
@@ -511,13 +511,13 @@ static int ecryptfs_write_end(struct file *file,
 	rc = fill_zeros_to_end_of_page(page, to);
 	if (rc) {
 		ecryptfs_printk(KERN_WARNING, "Error attempting to fill "
-			"zeros in page with index = [0x%.16lx]\n", index);
+			"zeros in page with index = [0x%.16llxlx]\n", (unsigned long long)index);
 		goto out;
 	}
 	rc = ecryptfs_encrypt_page(page);
 	if (rc) {
 		ecryptfs_printk(KERN_WARNING, "Error encrypting page (upper "
-				"index [0x%.16lx])\n", index);
+				"index [0x%.16llx])\n", (unsigned long long)index);
 		goto out;
 	}
 	if (pos + copied > i_size_read(ecryptfs_inode)) {

@@ -191,9 +191,11 @@ static int pca953x_read_regs(struct pca953x_chip *chip, int reg, u8 *val)
 					(reg << bank_shift) | REG_ADDR_AI,
 					NBANK(chip), val);
 	} else {
-		ret = i2c_smbus_read_word_data(chip->client, reg << 1);
+		ret = i2c_smbus_read_byte_data(chip->client, reg << 1);
 		val[0] = (u16)ret & 0xFF;
-		val[1] = (u16)ret >> 8;
+		ret = i2c_smbus_read_byte_data(chip->client, (reg << 1) + 1);
+		val[1] = (u16)ret & 0xFF;
+		//val[1] = (u16)ret >> 8;
 	}
 	if (ret < 0) {
 		dev_err(&chip->client->dev, "failed reading register\n");
@@ -202,6 +204,67 @@ static int pca953x_read_regs(struct pca953x_chip *chip, int reg, u8 *val)
 
 	return 0;
 }
+
+static ssize_t show_get_dir(struct device *dev,struct device_attribute *attr, char *buf)
+{
+	u8 val[MAX_BANK] = {0};
+	int ret;
+	struct pca953x_chip *chip = dev_get_drvdata(dev);
+	ret = pca953x_read_regs(chip, PCA957X_CFG, val);
+	if (ret)
+		return sprintf(buf, "\n", "Fail to read pca953x register");
+	else
+		return sprintf(buf, "dir from gpio0 to gpio15: 0x%x\n", (val[1] << 8 | val[0]));
+}
+
+static ssize_t store_set_dir(struct device *dev,struct device_attribute *attr, char *buf)
+{
+	u8 val[MAX_BANK] = {0};
+	int ret;
+	struct pca953x_chip *chip = dev_get_drvdata(dev);
+	char *pvalue = NULL;
+	u32 value = 0;
+	value = simple_strtoul(buf, &pvalue, 16);
+	val[0] = value & 0xff;;
+	val[1] = (value & 0xff00) >> 8;
+	ret = pca953x_write_regs(chip, PCA957X_CFG, val);
+	if (ret)
+		return sprintf(buf, "\n", "Fail to write pca953x register");
+	else
+		return sprintf(buf, "0x%x\n", (val[0] << 8 | val[1]));
+}
+
+static ssize_t show_get_val(struct device *dev,struct device_attribute *attr, char *buf)
+{
+	u8 val[MAX_BANK] = {0};
+	int ret;
+	struct pca953x_chip *chip = dev_get_drvdata(dev);
+	ret = pca953x_read_regs(chip, PCA957X_OUT, val);
+	if (ret)
+		return sprintf(buf, "\n", "Fail to read pca953x register");
+	else
+		return sprintf(buf, "value from gpio0 to gpio15: 0x%x\n", (val[1] << 8 | val[0]));
+}
+
+static ssize_t store_set_val(struct device *dev,struct device_attribute *attr, char *buf)
+{
+	u8 val[MAX_BANK] = {0};
+	int ret;
+	struct pca953x_chip *chip = dev_get_drvdata(dev);
+	char *pvalue = NULL;
+	u32 value = 0;
+	value = simple_strtoul(buf, &pvalue, 16);
+	val[0] = value & 0xff;;
+	val[1] = (value & 0xff00) >> 8;
+	ret = pca953x_write_regs(chip, PCA957X_OUT, val);
+	if (ret)
+		return sprintf(buf, "\n", "Fail to write pca953x register");
+	else
+		return sprintf(buf, "0x%x\n", (val[0] << 8 | val[1]));
+}
+
+static DEVICE_ATTR(value, 0664, show_get_val, store_set_val);
+static DEVICE_ATTR(direction, 0664, show_get_dir, store_set_dir);
 
 static int pca953x_gpio_direction_input(struct gpio_chip *gc, unsigned off)
 {
@@ -691,6 +754,11 @@ static int pca953x_probe(struct i2c_client *client,
 	if (ret)
 		return ret;
 
+	dev_set_drvdata(&client->dev, chip);
+	ret = device_create_file(&client->dev, &dev_attr_value);
+	ret |= device_create_file(&client->dev, &dev_attr_direction);
+	if (ret)
+		return ret;
 	if (pdata && pdata->setup) {
 		ret = pdata->setup(client, chip->gpio_chip.base,
 				chip->gpio_chip.ngpio, pdata->context);

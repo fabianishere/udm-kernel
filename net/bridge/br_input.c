@@ -26,6 +26,10 @@
 br_should_route_hook_t __rcu *br_should_route_hook __read_mostly;
 EXPORT_SYMBOL(br_should_route_hook);
 
+/* UBNT bridge hook */
+br_handle_entry_hook_t *br_handle_entry_hook;
+EXPORT_SYMBOL(br_handle_entry_hook);
+
 static int br_pass_frame_up(struct sk_buff *skb)
 {
 	struct net_device *indev, *brdev = BR_INPUT_SKB_CB(skb)->brdev;
@@ -125,13 +129,13 @@ int br_handle_frame_finish(struct sock *sk, struct sk_buff *skb)
 	const unsigned char *dest = eth_hdr(skb)->h_dest;
 	struct net_bridge_port *p = br_port_get_rcu(skb->dev);
 	struct net_bridge *br;
-	struct net_bridge_fdb_entry *dst;
+	struct net_bridge_fdb_entry *dst, *src;
 	struct net_bridge_mdb_entry *mdst;
 	struct sk_buff *skb2;
 	bool unicast = true;
 	u16 vid = 0;
 
-	if (!p || p->state == BR_STATE_DISABLED)
+	if (!p || (p->state == BR_STATE_DISABLED && skb->protocol != htons(ETH_P_PAE)))
 		goto drop;
 
 	if (!br_allowed_ingress(p->br, nbp_get_vlan_info(p), skb, &vid))
@@ -139,8 +143,11 @@ int br_handle_frame_finish(struct sock *sk, struct sk_buff *skb)
 
 	/* insert into forwarding database after filtering to avoid spoofing */
 	br = p->br;
-	if (p->flags & BR_LEARNING)
-		br_fdb_update(br, p, eth_hdr(skb)->h_source, vid, false);
+	if (p->flags & BR_LEARNING) {
+		src = br_fdb_update(br, p, eth_hdr(skb)->h_source, vid, false, skb);
+		if (src && br_handle_entry_hook)
+			br_handle_entry_hook(p, (void *)src, BR_FDB_ENTRY_SRC, skb);
+	}
 
 	if (!is_broadcast_ether_addr(dest) && is_multicast_ether_addr(dest) &&
 	    br_multicast_rcv(br, p, skb, vid))
@@ -191,9 +198,14 @@ int br_handle_frame_finish(struct sock *sk, struct sk_buff *skb)
 	if (skb) {
 		if (dst) {
 			dst->used = jiffies;
+			if (br_handle_entry_hook)
+				br_handle_entry_hook(dst->dst, (void *)dst, BR_FDB_ENTRY_DST, skb);
 			br_forward(dst->dst, skb, skb2);
-		} else
+		} else {
+			if (src && br_handle_entry_hook)
+				br_handle_entry_hook(p, (void *)src, BR_FDB_ENTRY_FWD, skb);
 			br_flood_forward(br, skb, skb2, unicast);
+		}
 	}
 
 	if (skb2)
@@ -215,7 +227,7 @@ static int br_handle_local_finish(struct sock *sk, struct sk_buff *skb)
 
 	/* check if vlan is allowed, to avoid spoofing */
 	if (p->flags & BR_LEARNING && br_should_learn(p, skb, &vid))
-		br_fdb_update(p->br, p, eth_hdr(skb)->h_source, vid, false);
+		br_fdb_update(p->br, p, eth_hdr(skb)->h_source, vid, false, skb);
 	return 0;	 /* process further */
 }
 
@@ -229,6 +241,7 @@ rx_handler_result_t br_handle_frame(struct sk_buff **pskb)
 	struct sk_buff *skb = *pskb;
 	const unsigned char *dest = eth_hdr(skb)->h_dest;
 	br_should_route_hook_t *rhook;
+	u8 state;
 
 	if (unlikely(skb->pkt_type == PACKET_LOOPBACK))
 		return RX_HANDLER_PASS;
@@ -288,7 +301,12 @@ rx_handler_result_t br_handle_frame(struct sk_buff **pskb)
 	}
 
 forward:
-	switch (p->state) {
+	if (likely(skb->protocol != htons(ETH_P_PAE)))
+		state = p->state;
+	else
+		state = BR_STATE_FORWARDING;
+
+	switch (state) {
 	case BR_STATE_FORWARDING:
 		rhook = rcu_dereference(br_should_route_hook);
 		if (rhook) {

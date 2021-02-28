@@ -8,3 +8,28 @@ Required properties:
 - gpio-controller : Marks the device node as a GPIO controller.
 - interrupts : Interrupt mapping for GPIO IRQ.
 - gpio-ranges : Interaction with the PINCTRL subsystem.
+- baseidx : base index for the GPIO numeration.
+
+Example of gpio-controller nodes:
+	gpio0 {
+		#gpio-cells = <2>;
+		compatible = "arm,pl061", "arm,primecell";
+		gpio-controller;
+		reg = <0x0 0xfd887000 0x0 0x1000>;
+		interrupts = <0 2 4>;
+		clocks = <&sbclk>;
+		clock-names = "apb_pclk";
+		baseidx = <0>;
+	};
+
+	gpio1 {
+		#gpio-cells = <2>;
+		compatible = "arm,pl061", "arm,primecell";
+		gpio-controller;
+		reg = <0x0 0xfd888000 0x0 0x1000>;
+		interrupts = <0 3 4>;
+		clocks = <&sbclk>;
+		clock-names = "apb_pclk";
+		baseidx = <8>;
+	};
+

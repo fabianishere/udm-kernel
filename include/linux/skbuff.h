@@ -651,6 +651,7 @@ struct sk_buff {
 		__u32		reserved_tailroom;
 	};
 
+	__u32           ubnt_mark;
 	union {
 		__be16		inner_protocol;
 		__u8		inner_ipproto;
@@ -830,6 +831,7 @@ static inline struct sk_buff *alloc_skb_head(gfp_t priority)
 	return __alloc_skb_head(priority, -1);
 }
 
+extern void skb_release_head_state(struct sk_buff *skb);
 struct sk_buff *skb_morph(struct sk_buff *dst, struct sk_buff *src);
 int skb_copy_ubufs(struct sk_buff *skb, gfp_t gfp_mask);
 struct sk_buff *skb_clone(struct sk_buff *skb, gfp_t priority);

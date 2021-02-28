@@ -57,6 +57,14 @@ static void m25p_addr2cmd(struct spi_nor *nor, unsigned int addr, u8 *cmd)
 	cmd[4] = addr >> (nor->addr_width * 8 - 32);
 }
 
+static void m25p_addr2cmd_3bytes(u8 addr_width, unsigned int addr, u8 *cmd)
+{
+	/* opcode is in cmd[0] */
+	cmd[1] = addr >> (addr_width * 8 -  8);
+	cmd[2] = addr >> (addr_width * 8 - 16);
+	cmd[3] = addr >> (addr_width * 8 - 24);
+}
+
 static int m25p_cmdsz(struct spi_nor *nor)
 {
 	return 1 + nor->addr_width;
@@ -170,6 +178,52 @@ static int m25p80_erase(struct spi_nor *nor, loff_t offset)
 	return 0;
 }
 
+
+/**
+ * m25p80_read_fact_prot_reg - [MTD Interface] Read factory OTP area
+ * @param mtd       MTD device structure
+ * @param from      The offset to read
+ * @param len       number of bytes to read
+ * @param retlen    pointer to variable to store the number of read bytes
+ * @param buf       the databuffer to put/get data
+ *
+ * Read factory OTP area.
+ */
+#define OTP_READ_TX_SIZE 	5
+
+static int m25p80_read_fact_prot_reg(struct mtd_info *mtd, loff_t from,
+            size_t len, size_t *retlen, u_char *buf)
+{
+	struct spi_nor *nor = mtd->priv;
+	struct m25p *flash = nor->priv;
+	struct spi_device *spi = flash->spi;
+	struct spi_transfer t[OTP_READ_TX_SIZE];
+	struct spi_message m;
+
+	spi_message_init(&m);
+	memset(t, 0, (sizeof t));
+
+	flash->command[0] = SPINOR_OP_RDSFDP;
+
+	/* 24 bit address */
+	m25p_addr2cmd_3bytes(3, from, flash->command);
+
+	t[0].tx_buf = flash->command;
+	t[0].len = OTP_READ_TX_SIZE;
+	spi_message_add_tail(&t[0], &m);
+
+	t[1].rx_buf = buf;
+	t[1].rx_nbits = m25p80_rx_nbits(nor);
+	t[1].len = len;
+	spi_message_add_tail(&t[1], &m);
+
+	spi_sync(spi, &m);
+
+	*retlen = m.actual_length - OTP_READ_TX_SIZE;
+
+    return 0;
+}
+
 /*
  * board specific setup should have ensured the SPI clock used here
  * matches what the READ command supports, at least until this driver
@@ -233,6 +287,7 @@ static int m25p_probe(struct spi_device *spi)
 		return ret;
 
 	ppdata.of_node = spi->dev.of_node;
+	nor->mtd->_read_fact_prot_reg = m25p80_read_fact_prot_reg;
 
 	return mtd_device_parse_register(&flash->mtd, NULL, &ppdata,
 			data ? data->parts : NULL,
@@ -261,6 +316,7 @@ static int m25p_remove(struct spi_device *spi)
  * keep them available as module aliases for existing platforms.
  */
 static const struct spi_device_id m25p_ids[] = {
+	{"spi_flash_jedec_detection"},
 	{"at25fs010"},	{"at25fs040"},	{"at25df041a"},	{"at25df321a"},
 	{"at25df641"},	{"at26f004"},	{"at26df081a"},	{"at26df161a"},
 	{"at26df321"},	{"at45db081d"},
@@ -271,7 +327,7 @@ static const struct spi_device_id m25p_ids[] = {
 	{"gd25q32"},	{"gd25q64"},
 	{"160s33b"},	{"320s33b"},	{"640s33b"},
 	{"mx25l2005a"},	{"mx25l4005a"},	{"mx25l8005"},	{"mx25l1606e"},
-	{"mx25l3205d"},	{"mx25l3255e"},	{"mx25l6405d"},	{"mx25l12805d"},
+	{"mx25l3205d"},	{"mx25l3255e"},	{"mx25u12835f"}, {"mx25l6405d"}, {"mx25l12805d"},
 	{"mx25l12855e"},{"mx25l25635e"},{"mx25l25655e"},{"mx66l51235l"},
 	{"mx66l1g55g"},
 	{"n25q064"},	{"n25q128a11"},	{"n25q128a13"},	{"n25q256a"},

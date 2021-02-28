@@ -446,7 +446,7 @@ static noinline int add_ra_bio_pages(struct inode *inode,
 				     struct compressed_bio *cb)
 {
 	unsigned long end_index;
-	unsigned long pg_index;
+	rdx_t pg_index;
 	u64 last_offset;
 	u64 isize = i_size_read(inode);
 	int ret;

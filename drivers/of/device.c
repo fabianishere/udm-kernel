@@ -89,12 +89,11 @@ void of_dma_configure(struct device *dev, struct device_node *np)
 	unsigned long offset;
 	struct iommu_ops *iommu;
 
-	/*
-	 * Set default coherent_dma_mask to 32 bit.  Drivers are expected to
-	 * setup the correct supported mask.
+	/* Set to PHYS_MASK to comply with the selected arch and allow
+	 * accessing all physical memory with DMA
 	 */
 	if (!dev->coherent_dma_mask)
-		dev->coherent_dma_mask = DMA_BIT_MASK(32);
+		dev->coherent_dma_mask = PHYS_MASK;
 
 	/*
 	 * Set it to coherent_dma_mask by default if the architecture

@@ -462,7 +462,7 @@ static struct page *__r4w_get_page(void *priv, u64 offset, bool *uptodate)
 
 	if (offset >= i_size) {
 		*uptodate = true;
-		dprintk("%s: g_zero_page index=0x%lx\n", __func__, index);
+		dprintk("%s: g_zero_page index=0x%llx\n", __func__, (unsigned long long)index);
 		return ZERO_PAGE(0);
 	}
 
@@ -470,8 +470,8 @@ static struct page *__r4w_get_page(void *priv, u64 offset, bool *uptodate)
 	if (!page) {
 		page = find_or_create_page(mapping, index, GFP_NOFS);
 		if (unlikely(!page)) {
-			dprintk("%s: grab_cache_page Failed index=0x%lx\n",
-				__func__, index);
+			dprintk("%s: grab_cache_page Failed index=0x%llx\n",
+				__func__, (unsigned long long)index);
 			return NULL;
 		}
 		unlock_page(page);
@@ -480,7 +480,7 @@ static struct page *__r4w_get_page(void *priv, u64 offset, bool *uptodate)
 		*uptodate = true;
 	else
 		*uptodate = PageUptodate(page);
-	dprintk("%s: index=0x%lx uptodate=%d\n", __func__, index, *uptodate);
+	dprintk("%s: index=0x%llx uptodate=%d\n", __func__, (unsigned long long)index, *uptodate);
 	return page;
 }
 

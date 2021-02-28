@@ -181,6 +181,7 @@ config VXLAN
 
 config NETCONSOLE
 	tristate "Network console logging support"
+	depends on !NET_MQ_TX_LOCK_OPT
 	---help---
 	If you want to log kernel messages over the network, enable this.
 	See <file:Documentation/networking/netconsole.txt> for details.
@@ -380,5 +381,7 @@ config VMXNET3
 	  module will be called vmxnet3.
 
 source "drivers/net/hyperv/Kconfig"
+
+source "drivers/net/power/Kconfig"
 
 endif # NETDEVICES

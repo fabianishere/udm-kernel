@@ -29,13 +29,18 @@
  * There are enough spare bits in a page table entry for the kernel specific
  * state.
  */
+#ifdef CONFIG_ARM_PAGE_SIZE_LARGE
+#define PTRS_PER_PTE		(512 >> (CONFIG_ARM_PAGE_SIZE_LARGE_SHIFT - 12))
+#else
 #define PTRS_PER_PTE		512
+#endif
 #define PTRS_PER_PMD		512
 #define PTRS_PER_PGD		4
 
-#define PTE_HWTABLE_PTRS	(0)
+#define PTE_HWTABLE_PTRS	(PTRS_PER_PTE)
 #define PTE_HWTABLE_OFF		(0)
-#define PTE_HWTABLE_SIZE	(PTRS_PER_PTE * sizeof(u64))
+#define PTE_HWTABLE_SIZE	(512 * 8) /*512 64bit values*/
+#define PTE_HWTABLE_MASK	(~(PTE_HWTABLE_SIZE-1))
 
 /*
  * PGDIR_SHIFT determines the size a top-level page table entry can map.
@@ -162,7 +167,7 @@
 
 static inline pmd_t *pud_page_vaddr(pud_t pud)
 {
-	return __va(pud_val(pud) & PHYS_MASK & (s32)PAGE_MASK);
+	return __va(pud_val(pud) & PHYS_MASK & (s32)PTE_HWTABLE_MASK);
 }
 
 /* Find an entry in the second-level page table.. */

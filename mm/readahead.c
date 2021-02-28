@@ -365,7 +365,7 @@ static int try_context_readahead(struct address_space *mapping,
 		size *= 2;
 
 	ra->start = offset;
-	ra->size = min(size + req_size, max);
+	ra->size = min((unsigned long)size + req_size, max);
 	ra->async_size = 1;
 
 	return 1;

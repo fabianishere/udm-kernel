@@ -1,0 +1,90 @@
+/**
+ * @defgroup group_eth Ethernet
+ * Ethernet Controller HAL driver.
+ *
+ * For documentation see @ref group_eth_doc section.\n
+ * For API reference see @ref group_eth_api section.\n
+ *
+ * @defgroup group_eth_doc Documentation
+ * @ingroup group_eth
+ * @{
+ * @page ethdoc
+ * @ref overview\n
+ * @ref flows
+ * @section overview Overview
+ * The Unified GbE and 10GbE Ethernet Controller contains the following
+ * components:
+ * -# High performance Universal DMA, M2S DMA for packets transmission (TX), and
+ * S2M DMA for packets reception (RX).
+ * -# Ethernet Controller that forwards packets between the DMAs and the MAC,
+ * performs advanced offloading (checksum calculation, validation, TSO, RSS)
+ * -# MAC layer that supports various interfaces (RGMII, 10GbE serial, 1Gbe
+ * serial)
+ * -# MDIO Controller that supports Clauses 22 and 45.
+ *
+ * @section flows Software Flows
+ * @subsection init Initialization
+ * -# Call al_eth_adapter() to initialize the controller.
+ * -# Call al_eth_mac_config() to initialize the MAC with the requested
+ * interface type.
+ * -# Call al_eth_rx_pkt_limit_config() to set the minimal and maximum allowed
+ * rx packet length.
+ * -# Call al_eth_queue_config() to configure and enable a specific queue,
+ * both TX and RX queues should be configured using that API.
+ * -# Call al_eth_mac_start() to enable the transmittion and reception of the MAC.
+ * -# Call al_eth_mdio_config() to configure the MDIO interface.
+ * -# by default the controller in the receive side will forward all the
+ * received packets to UDMA 0 queue 0, if the user wants to change that
+ * behavior, then he can configure the forwarding engine using various
+ * APIs provided by this driver, for detailed description of the capabilities
+ * and configurations, and which APIs to use, please refer to the Reference
+ * Manual of the chip.
+ * -# Call al_eth_tso_mss_config() to configure the MSS values, those values
+ * will be used by the controller to determine the MSS value to use when
+ * doing TCP Segmentation Offloading by the HW. the user can configure up to
+ * 8 different values, the HW will use one of those values according to a dedicated
+ * index within the packets descriptor.
+ *
+ * @subsection tx Transmitting Packets
+ * Sending a packet for transmission is done using the following data
+ * structures and APIs:
+ * - struct al_eth_pkt: this structure includes the information about
+ * the packet to transmit such as: data buffers (dma address and length of each
+ * data chunk, number of those buffers, flags (raise interrupt once TX done,
+ * enable offloading features, various information about the layer 3 and 4 that
+ * needed when offloading features requested.
+ * note: the same structure used for describing received packets, so some of
+ * this structure fields such as (rxhash, rx_header_len) are not used for TX APIs.
+ * - struct al_eth_meta_data: when layer 3 or 4 offloading requested, additional
+ * information need to be provided to the HW engine, that information added into
+ * additional descriptor (meta data descriptor), this structure (al_eth_meta_data)
+ * used to describe this information, when this information is needed, a pointer
+ * within the al_eth_pkt structure must be set to this structure.
+ * - al_eth_tx_available_get() this API used to get the available free descriptors.
+ * - al_eth_tx_pkt_prepare() this API prepares programs the descriptors in the
+ * tx submission ring according to packets information that provided by the
+ * al_eth_pkt structure.
+ * - al_eth_tx_dma_action() this API arms the dma with previously prepared
+ * descriptors. the user can do multiple prepares and arm the DMA with single
+ * call of this API.
+ * - al_eth_comp_tx_get() this API returns number of descriptors the engine
+ * has completed since the last call of this API. 
+ * 
+ *
+ * @subsection rx Packet Reception
+ * Packet reception flow consists of:
+ * - preparing data buffers where the packets will be stored by the DMA. This
+ * flow can be done using the al_eth_rx_buffer_add() and
+ * al_eth_rx_buffer_action(), the first API programs the descriptor in the
+ * submission ring of the RX DMA, and the second one will update the HW about
+ * the new added descriptors.
+ * - handling received packet: when a notification (though interrupt or polling)
+ * is received, the API al_eth_pkt_rx() API should be called. This API will
+ * process the completion descriptors of the RX DMA, and when a full packet
+ * is received, it will fill the al_eth_pkt structure with the needed
+ * information (number of buffers used to store the packet, the length of each
+ * buffer, layer 3 and 4 protocol type, flags (layer 2 errors, checksum errors)
+ * and hash result).
+ *
+ * @}
+ */

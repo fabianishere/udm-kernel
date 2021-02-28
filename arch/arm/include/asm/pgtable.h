@@ -61,8 +61,11 @@ extern void __pgd_error(const char *file, int line, pgd_t);
  * mapping to be mapped at.  This is particularly important for
  * non-high vector CPUs.
  */
+#if defined(CONFIG_ARM_PAGE_SIZE_LARGE)
+#define FIRST_USER_ADDRESS	(PAGE_SIZE)
+#else 
 #define FIRST_USER_ADDRESS	(PAGE_SIZE * 2)
-
+#endif
 /*
  * Use TASK_SIZE as the ceiling argument for free_pgtables() and
  * free_pgd_range() to avoid freeing the modules pmd when LPAE is enabled (pmd
@@ -185,7 +188,7 @@ extern pgd_t swapper_pg_dir[PTRS_PER_PGD];
 
 static inline pte_t *pmd_page_vaddr(pmd_t pmd)
 {
-	return __va(pmd_val(pmd) & PHYS_MASK & (s32)PAGE_MASK);
+	return __va(pmd_val(pmd) & PHYS_MASK & (s32)PTE_HWTABLE_MASK);
 }
 
 #define pmd_page(pmd)		pfn_to_page(__phys_to_pfn(pmd_val(pmd) & PHYS_MASK))

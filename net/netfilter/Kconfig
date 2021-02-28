@@ -133,6 +133,13 @@ config NF_CONNTRACK_LABELS
 	  This option enables support for assigning user-defined flag bits
 	  to connection tracking entries.  It selected by the connlabel match.
 
+config NF_CONNTRACK_DPI
+	bool 'Connection tracking DPI'
+	depends on NETFILTER_ADVANCED
+	help
+	  This option enables support for storing DPI info in connection tracking
+	  entries. 
+
 config NF_CT_PROTO_DCCP
 	tristate 'DCCP protocol connection tracking support'
 	depends on NETFILTER_ADVANCED

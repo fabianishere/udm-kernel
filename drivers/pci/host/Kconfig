@@ -15,6 +15,16 @@ config PCI_MVEBU
 	depends on ARCH_MVEBU || ARCH_DOVE
 	depends on OF
 
+config PCI_INTERNAL_ALPINE
+	bool "Annapurna Labs Alpine internal PCIe controller"
+	depends on ARCH_ALPINE
+	depends on OF
+
+config PCI_EXTERNAL_ALPINE
+	bool "Annapurna Labs Alpine external PCIe controller"
+	depends on ARCH_ALPINE
+	depends on OF
+
 config PCIE_DW
 	bool
 

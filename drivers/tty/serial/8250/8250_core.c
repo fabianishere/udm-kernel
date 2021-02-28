@@ -38,6 +38,9 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/pm_runtime.h>
+#ifdef CONFIG_AL_TRACE
+#include "../../al_serial_trace.h"
+#endif
 #ifdef CONFIG_SPARC
 #include <linux/sunserialcore.h>
 #endif
@@ -448,8 +451,20 @@ static void mem_serial_out(struct uart_port *p, int offset, int value)
 
 static void mem32_serial_out(struct uart_port *p, int offset, int value)
 {
+#ifdef CONFIG_AL_TRACE
+	int original_offset = offset;
+	struct uart_8250_port *up = up_to_u8250p(p);
+#endif
+
 	offset = offset << p->regshift;
 	writel(value, p->membase + offset);
+
+#ifdef CONFIG_AL_TRACE
+	/* Print to al_trace if it's going to console and if al_trace is initialized*/
+	if ((original_offset == UART_TX) &&
+			up->al_trace)
+		al_serial_trace_putchar(value);
+#endif
 }
 
 static unsigned int mem32_serial_in(struct uart_port *p, int offset)
@@ -3552,6 +3567,7 @@ static int __init univ8250_console_init(void)
 {
 	serial8250_isa_init_ports();
 	register_console(&univ8250_console);
+
 	return 0;
 }
 console_initcall(univ8250_console_init);
@@ -3860,6 +3876,9 @@ int serial8250_register_8250_port(struct uart_8250_port *up)
 		uart->port.rs485_config	= up->port.rs485_config;
 		uart->port.rs485	= up->port.rs485;
 		uart->dma		= up->dma;
+#ifdef CONFIG_AL_TRACE
+		uart->al_trace		= up->al_trace;
+#endif
 
 		/* Take tx_loadsz from fifosize if it wasn't set separately */
 		if (uart->port.fifosize && !uart->tx_loadsz)

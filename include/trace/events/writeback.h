@@ -71,10 +71,10 @@ TRACE_EVENT(writeback_dirty_page,
 		__entry->index = page->index;
 	),
 
-	TP_printk("bdi %s: ino=%lu index=%lu",
+	TP_printk("bdi %s: ino=%lu index=%llu",
 		__entry->name,
 		__entry->ino,
-		__entry->index
+		 (unsigned long long)__entry->index
 	)
 );
 

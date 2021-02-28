@@ -151,25 +151,30 @@ int sch_direct_xmit(struct sk_buff *skb, struct Qdisc *q,
 		    spinlock_t *root_lock, bool validate)
 {
 	int ret = NETDEV_TX_BUSY;
-
 	/* And release qdisc */
-	spin_unlock(root_lock);
-
-	/* Note that we validate skb (GSO, checksum, ...) outside of locks */
-	if (validate)
-		skb = validate_xmit_skb_list(skb, dev);
-
-	if (likely(skb)) {
-		HARD_TX_LOCK(dev, txq, smp_processor_id());
-		if (!netif_xmit_frozen_or_stopped(txq))
+	if (netif_supports_mq_tx_lock_opt(dev)) {
+		if (validate)
+			skb = validate_xmit_skb_list(skb, dev);
+		if (skb && !netif_xmit_frozen_or_stopped(txq))
 			skb = dev_hard_start_xmit(skb, dev, txq, &ret);
-
-		HARD_TX_UNLOCK(dev, txq);
 	} else {
+		spin_unlock(root_lock);
+		/* Note that we validate skb (GSO, checksum, ...) outside of locks */
+		if (validate)
+			skb = validate_xmit_skb_list(skb, dev);
+
+		if (likely(skb)) {
+			HARD_TX_LOCK(dev, txq, smp_processor_id());
+			if (!netif_xmit_frozen_or_stopped(txq))
+				skb = dev_hard_start_xmit(skb, dev, txq, &ret);
+			HARD_TX_UNLOCK(dev, txq);
+		} else {
+			spin_lock(root_lock);
+			return qdisc_qlen(q);
+		}
 		spin_lock(root_lock);
-		return qdisc_qlen(q);
 	}
-	spin_lock(root_lock);
+
 
 	if (dev_xmit_complete(ret)) {
 		/* Driver sent out skb successfully or skb was consumed */

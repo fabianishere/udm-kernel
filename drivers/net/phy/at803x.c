@@ -23,6 +23,7 @@
 #define AT803X_INTR_STATUS			0x13
 #define AT803X_SMART_SPEED			0x14
 #define AT803X_LED_CONTROL			0x18
+#define AT803X_LED_OVERRIDE			0x19
 #define AT803X_WOL_ENABLE			0x01
 #define AT803X_DEVICE_ADDR			0x03
 #define AT803X_LOC_MAC_ADDR_0_15_OFFSET		0x804C
@@ -38,6 +39,11 @@
 #define AT803X_DEBUG_DATA			0x1E
 #define AT803X_DEBUG_SYSTEM_MODE_CTRL		0x05
 #define AT803X_DEBUG_RGMII_TX_CLK_DLY		BIT(8)
+
+#ifdef CONFIG_AT8033_SEL_1P8
+#define AT8033_DEBUG_SEL_1P8		0x1F
+#define AT8033_DEBUG_SEL_1P8_EN		BIT(3)
+#endif
 
 #define ATH8030_PHY_ID 0x004dd076
 #define ATH8031_PHY_ID 0x004dd074
@@ -60,6 +66,33 @@ struct at803x_context {
 	u16 smart_speed;
 	u16 led_control;
 };
+
+static const struct of_device_id atheros_at803x_of_table[] =
+{
+	{ .compatible = "atheros,at803x", },
+	{}
+};
+
+static inline void at803x_reset_set(struct gpio_desc *gpiod_reset, unsigned value)
+{
+	if (gpiod_cansleep(gpiod_reset)) {
+		gpiod_set_value_cansleep(gpiod_reset, value);
+	} else {
+		gpiod_set_value(gpiod_reset, value);
+	}
+}
+
+static inline void at803x_reset(struct phy_device *phydev)
+{
+	struct at803x_priv *priv = phydev->priv;
+
+	if (priv->gpiod_reset) {
+		at803x_reset_set(priv->gpiod_reset, 0);
+		msleep(1);
+		at803x_reset_set(priv->gpiod_reset, 1);
+		msleep(1);
+	}
+}
 
 /* save relevant PHY registers to private copy */
 static void at803x_context_save(struct phy_device *phydev,
@@ -188,6 +221,40 @@ static int at803x_resume(struct phy_device *phydev)
 	return 0;
 }
 
+static void at803x_of_reset_init(struct phy_device *phydev, struct gpio_desc **gpiod_reset)
+{
+	struct device_node *np_dev = NULL;
+	uint32_t reg = 0;
+	int rc, gpio_reset = 0;
+
+	*gpiod_reset = NULL;
+
+	for_each_matching_node (np_dev, atheros_at803x_of_table) {
+		if (!of_property_read_u32(np_dev, "reg", &reg)) {
+			if (reg != phydev->addr) {
+				continue;
+			}
+			gpio_reset = of_get_named_gpio(np_dev, "reset-gpios", 0);
+			if (!gpio_is_valid(gpio_reset)) {
+				dev_warn(&phydev->dev, "GPIO %d is not valid GPIO pin\n", gpio_reset);
+				of_node_put(np_dev);
+				return;
+			}
+
+			rc = devm_gpio_request_one(&phydev->dev, gpio_reset, GPIOF_OUT_INIT_HIGH,
+						   "ar803x-reset");
+			if (rc) {
+				dev_warn(&phydev->dev, "Failed to request reset gpio\n");
+			} else {
+				*gpiod_reset = gpio_to_desc(gpio_reset);
+			}
+			of_node_put(np_dev);
+			return;
+		}
+	}
+	return;
+}
+
 static int at803x_probe(struct phy_device *phydev)
 {
 	struct device *dev = &phydev->dev;
@@ -202,9 +269,17 @@ static int at803x_probe(struct phy_device *phydev)
 	if (IS_ERR(gpiod_reset))
 		return PTR_ERR(gpiod_reset);
 
+	/* Prefer initialization devm_gpiod_get_optional when of_mdiobus_register is used */
+	if (!gpiod_reset) {
+		at803x_of_reset_init(phydev, &gpiod_reset);
+	}
+
 	priv->gpiod_reset = gpiod_reset;
 
 	phydev->priv = priv;
+
+	/* reset on init */
+	at803x_reset(phydev);
 
 	return 0;
 }
@@ -217,17 +292,30 @@ static int at803x_config_init(struct phy_device *phydev)
 	if (ret < 0)
 		return ret;
 
-	if (phydev->interface == PHY_INTERFACE_MODE_RGMII_TXID) {
-		ret = phy_write(phydev, AT803X_DEBUG_ADDR,
-				AT803X_DEBUG_SYSTEM_MODE_CTRL);
-		if (ret)
-			return ret;
-		ret = phy_write(phydev, AT803X_DEBUG_DATA,
-				AT803X_DEBUG_RGMII_TX_CLK_DLY);
-		if (ret)
-			return ret;
-	}
+	ret = phy_write(phydev, AT803X_DEBUG_ADDR,
+			AT803X_DEBUG_SYSTEM_MODE_CTRL);
+	if (ret)
+		return ret;
+	ret = phy_write(phydev, AT803X_DEBUG_DATA,
+			AT803X_DEBUG_RGMII_TX_CLK_DLY);
+	if (ret)
+		return ret;
 
+	/* invert LED_ACT -> LED_ACT = 0 */
+	ret = phy_write(phydev, AT803X_LED_OVERRIDE, 0x0200);
+	if (ret)
+		return ret;
+
+#ifdef CONFIG_AT8033_SEL_1P8
+	ret = phy_write(phydev, AT803X_DEBUG_ADDR,
+			AT8033_DEBUG_SEL_1P8);
+	if (ret)
+		return ret;
+	ret = phy_write(phydev, AT803X_DEBUG_DATA,
+			(phy_read(phydev, AT803X_DEBUG_DATA) | AT8033_DEBUG_SEL_1P8_EN));
+	if (ret)
+		return ret;
+#endif
 	return 0;
 }
 
@@ -274,10 +362,7 @@ static void at803x_link_change_notify(struct phy_device *phydev)
 
 				at803x_context_save(phydev, &context);
 
-				gpiod_set_value(priv->gpiod_reset, 0);
-				msleep(1);
-				gpiod_set_value(priv->gpiod_reset, 1);
-				msleep(1);
+				at803x_reset(phydev);
 
 				at803x_context_restore(phydev, &context);
 
@@ -299,11 +384,11 @@ static struct phy_driver at803x_driver[] = {
 	.phy_id_mask		= 0xffffffef,
 	.probe			= at803x_probe,
 	.config_init		= at803x_config_init,
-	.link_change_notify	= at803x_link_change_notify,
+	/*.link_change_notify	= at803x_link_change_notify,*/
 	.set_wol		= at803x_set_wol,
 	.get_wol		= at803x_get_wol,
-	.suspend		= at803x_suspend,
-	.resume			= at803x_resume,
+	/*.suspend		= at803x_suspend,*/
+	/*.resume		= at803x_resume,*/
 	.features		= PHY_GBIT_FEATURES,
 	.flags			= PHY_HAS_INTERRUPT,
 	.config_aneg		= genphy_config_aneg,
@@ -340,8 +425,10 @@ static struct phy_driver at803x_driver[] = {
 	.link_change_notify	= at803x_link_change_notify,
 	.set_wol		= at803x_set_wol,
 	.get_wol		= at803x_get_wol,
+#ifndef CONFIG_ARCH_ALPINE
 	.suspend		= at803x_suspend,
 	.resume			= at803x_resume,
+#endif
 	.features		= PHY_GBIT_FEATURES,
 	.flags			= PHY_HAS_INTERRUPT,
 	.config_aneg		= genphy_config_aneg,

@@ -38,6 +38,27 @@ static inline pmd_t *pmd_off_k(unsigned long virt)
 	return pmd_offset(pud_offset(pgd_offset_k(virt), virt), virt);
 }
 
+static inline void set_fix_pte(unsigned long va, pte_t pte)
+{
+#if defined (CONFIG_ARM_PAGE_SIZE_LARGE) && defined(CONFIG_HIGHMEM)
+	pte_t *ptep = pte_offset_kernel(pmd_off_k(va), va);
+	set_pte_ext(ptep, pte, 0);
+	local_flush_tlb_kernel_page(va);
+#else
+	set_top_pte(va,pte);
+#endif
+}
+
+static inline pte_t get_fix_pte(unsigned long va)
+{
+#if defined (CONFIG_ARM_PAGE_SIZE_LARGE) && defined(CONFIG_HIGHMEM)
+	pte_t *ptep = pte_offset_kernel(pmd_off_k(va), va);
+	return *ptep;
+#else
+	return get_top_pte(va);
+#endif
+}
+
 struct mem_type {
 	pteval_t prot_pte;
 	pteval_t prot_pte_s2;
@@ -86,8 +107,8 @@ extern __init void add_static_vm_early(struct static_vm *svm);
 extern phys_addr_t arm_dma_limit;
 extern unsigned long arm_dma_pfn_limit;
 #else
-#define arm_dma_limit ((phys_addr_t)~0)
-#define arm_dma_pfn_limit (~0ul >> PAGE_SHIFT)
+#define arm_dma_limit (PHYS_MASK)
+#define arm_dma_pfn_limit (PHYS_MASK >> PAGE_SHIFT)
 #endif
 
 extern phys_addr_t arm_lowmem_limit;

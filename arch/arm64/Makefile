@@ -17,6 +17,10 @@ GZFLAGS		:=-9
 
 KBUILD_DEFCONFIG := defconfig
 
+ifeq ($(CONFIG_FUNC_REORDER),y)
+KBUILD_CFLAGS		+= -ffunction-sections
+endif
+
 KBUILD_CFLAGS	+= -mgeneral-regs-only
 KBUILD_CFLAGS	+= $(call cc-option, -mpc-relative-literal-loads)
 

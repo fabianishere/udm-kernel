@@ -3490,8 +3490,8 @@ static noinline_for_stack int __extent_writepage_io(struct inode *inode,
 			set_range_writeback(tree, cur, cur + iosize - 1);
 			if (!PageWriteback(page)) {
 				btrfs_err(BTRFS_I(inode)->root->fs_info,
-					   "page %lu not writeback, cur %llu end %llu",
-				       page->index, cur, end);
+					   "page %llu not writeback, cur %llu end %llu",
+				       (unsigned long long)page->index, cur, end);
 			}
 
 			ret = submit_extent_page(write_flags, tree, page,
