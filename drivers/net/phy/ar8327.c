@@ -31,7 +31,7 @@
 #include "ar8327.h"
 
 extern const struct ar8xxx_mib_desc ar8236_mibs[41];
-extern const struct switch_attr ar8xxx_sw_attr_vlan[1];
+extern const struct switch_attr ar8xxx_sw_attr_vlan[2];
 
 static u32
 ar8327_get_pad_cfg(struct ar8327_pad_cfg *cfg)
@@ -790,6 +790,8 @@ ar8327_hw_init(struct ar8xxx_priv *priv)
 
 	ar8xxx_phy_init(priv);
 
+	priv->hw_acl.max_ports = priv->dev.ports;
+
 	if ((ret = ubnt_acl_init(&priv->hw_acl))) {
 		return ret;
 	}
@@ -1060,7 +1062,10 @@ ar8327_vtu_load_vlan(struct ar8xxx_priv *priv, u32 vid, u32 port_mask)
 	int i;
 
 	op = AR8327_VTU_FUNC1_OP_LOAD | (vid << AR8327_VTU_FUNC1_VID_S);
-	val = AR8327_VTU_FUNC0_VALID | AR8327_VTU_FUNC0_IVL;
+	val = AR8327_VTU_FUNC0_VALID;
+	if (priv->use_ivl[vid])
+		val |= AR8327_VTU_FUNC0_IVL;
+
 	for (i = 0; i < AR8327_NUM_PORTS; i++) {
 		u32 mode;
 
@@ -1813,16 +1818,16 @@ static int ar8327_acl_rule_hw_to_sw(struct acl_hw *hw, void *data_in,
 	FIELD_GET(AR8327_MAC_RUL_M4, RULE_TYP, data);
 
 	if (data == AR8327_ACL_FILTER_MAC) {
-		entry->type = ACL_RULE_MAC;
+		entry->type = ACL_RULE_PORT_REDIRECTION;
 
 		FIELD_GET(AR8327_ACL_RSLT2, DES_PORT_EN, data);
 
 		if (1 == data) {
 			/*
-			* NOTE : In our case there is harcoded action for ACL_RULE_MAC type which is
+			* NOTE : In our case there is harcoded action for ACL_RULE_PORT_REDIRECTION type which is
 			* redirect incoming frame from port_src with SA to port_dst.
 			*/
-			entry->type = ACL_RULE_MAC;
+			entry->type = ACL_RULE_PORT_REDIRECTION;
 
 			FIELD_GET(AR8327_ACL_RSLT1, DES_PORT0, entry->port_dst);
 			FIELD_GET(AR8327_ACL_RSLT2, DES_PORT1, data);
@@ -1874,10 +1879,10 @@ static int ar8327_acl_rule_sw_to_hw(struct acl_hw *hw, acl_entry_t *entry,
 
 	memset(entry_hw, 0, sizeof(*entry_hw));
 	/*
-	 * NOTE : In our case there is harcoded action for ACL_RULE_MAC type which is
+	 * NOTE : In our case there is harcoded action for ACL_RULE_PORT_REDIRECTION type which is
 	 * redirect incoming frame from port_src with SA to port_dst.
 	 */
-	if (entry->type == ACL_RULE_MAC) {
+	if (entry->type == ACL_RULE_PORT_REDIRECTION) {
 		/**
 		 * SET ACTION
 		 */
@@ -2058,7 +2063,7 @@ static int ar8327_sw_set_acl_redirect(struct switch_dev *dev, const struct switc
 					   struct switch_val *val)
 {
 	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
-	return ubnt_acl_rule_process(&priv->hw_acl, val->value.s, ACL_RULE_MAC);
+	return ubnt_acl_rule_process(&priv->hw_acl, val->value.s, ACL_RULE_PORT_REDIRECTION);
 }
 
 /**
@@ -2394,7 +2399,6 @@ const struct acl_hw_ops ar8337_acl_ops = {
 	.rule_hw_to_sw = ar8327_acl_rule_hw_to_sw,
 	.rule_sw_to_hw = ar8327_acl_rule_sw_to_hw,
 	.max_entries = AR8XXX_NUM_ACL_ENTRIES,
-	.max_ports = AR8327_NUM_PORTS,
 };
 
 const struct ar8xxx_chip ar8327_chip = {

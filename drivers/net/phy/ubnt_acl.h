@@ -41,7 +41,8 @@ typedef enum {
 } acl_entry_state_t;
 
 typedef enum {
-	ACL_RULE_MAC = 0,
+	ACL_RULE_PORT_REDIRECTION = 0,
+	ACL_RULE_VLAN_ASSIGNMENT,
 } acl_entry_type_t;
 
 typedef struct {
@@ -58,6 +59,11 @@ typedef struct {
 
 	uint32_t port_dst;
 	uint32_t port_src;
+
+	/* vlan assignment */
+	uint16_t svid;
+	uint16_t ether_type;
+
 	int idx;
 
 	acl_entry_state_t state;
@@ -76,7 +82,6 @@ struct acl_hw;
 struct acl_hw_ops {
 	/* These are mandatory */
 	const uint32_t max_entries;
-	const uint32_t max_ports;
 
 	int (*const alloc)(struct acl_hw *hw);
 	void (*const destroy)(struct acl_hw *hw);
@@ -99,6 +104,7 @@ struct acl_hw_ops {
 struct acl_hw {
 
 	const struct acl_hw_ops *ops;
+	uint32_t max_ports;
 
 	/* HW private data structure */
 	void *data;
@@ -160,6 +166,15 @@ int ubnt_acl_sync(struct acl_hw *hw);
  */
 int ubnt_acl_rule_process(struct acl_hw *hw, const char *str,
 			  acl_entry_type_t rule_type);
+
+/**
+ * @brief Find ACL rule
+ *
+ * @param hw - platform dependent ACL control structure
+ * @param entry_in - entry to find - key should be filled
+ * @return int - error from errno.h, 0 on success
+ */
+int ubnt_acl_rule_get(struct acl_hw *hw, acl_entry_t *entry_in);
 
 /**
  * @brief Get ACL table

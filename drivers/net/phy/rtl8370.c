@@ -19,6 +19,8 @@
 #include <linux/switch.h>
 #include <linux/version.h>
 #include <linux/workqueue.h>
+#include <linux/of_gpio.h>
+#include <linux/gpio.h>
 #include <net/genetlink.h>
 
 #include "rtl83xx_api/rtk_error.h"
@@ -76,15 +78,29 @@ static const char *rtl_strerror(uint32_t code)
  * @brief Port mapping translation table
  */
 /* clang-format off */
-static const uint8_t port_mapping_table_p2l[] = {
+static const struct rtl8370_port_mapping _rtl_port_mapping [] =
+{
 #define X(phy, log, desc) log,
-	PORT_MAPPING_DEFAULT(X)
-#undef X
-};
-
-static const uint8_t port_mapping_table_l2p[] = {
-#define X(phy, log, desc) [log] = phy,
-	PORT_MAPPING_DEFAULT(X)
+#define Y(phy, log, desc) [log] = phy,
+	{
+		.name = "RTL8370B",
+		.id = CHIP_RTL8370B,
+		.p2l = { PORT_MAPPING_DEFAULT_RTL8370(X) },
+		.l2p = { PORT_MAPPING_DEFAULT_RTL8370(Y) },
+		.cpu = { PHY_PORT8, PHY_PORT9 },
+		.port_cnt = 10,
+		.cpu_cnt = 2,
+	},
+	{
+		.name = "RTL8367(S/C)",
+		.id = CHIP_RTL8367C,
+		.p2l = { PORT_MAPPING_DEFAULT_RTL8367(X) },
+		.l2p = { PORT_MAPPING_DEFAULT_RTL8367(Y) },
+		.cpu = { PHY_PORT5, PHY_PORT6 },
+		.port_cnt = 7,
+		.cpu_cnt = 2,
+	},
+#undef Y
 #undef X
 };
 /* clang-format on */
@@ -94,19 +110,22 @@ static const uint8_t port_mapping_table_l2p[] = {
  */
 static const struct of_device_id realtek_rtl8370_of_table[] =
 {
-    { .compatible = "realtek,rtl8370mb", },
-    {}
+	{ .compatible = "realtek,rtl8370mb", },
+	{ .compatible = "realtek,rtl8367c",  },
+	{}
 };
 
 /* OF LED profile attribute key */
 #define RTL8370_OF_ATT_LED_PROFILE "led-profile"
 #define RTL8370_OF_ATT_RESET_ON_INIT "reset-on-init"
+#define RTL8370_OF_ATT_RESET_GPIOS "reset-gpios"
 #define RTL8370_OF_ATT_PHY_ADDR "reg"
 #define RTL8370_OF_NODE_MAC "gmac"
 #define RTL8370_OF_NODE_CPU_PORT "cpu_port"
 #define RTL8370_OF_ATT_MAC_MODE "mode"
 #define RTL8370_OF_ATT_TX_DELAY "delay-tx"
 #define RTL8370_OF_ATT_RX_DELAY "delay-rx"
+#define RTL8370_OF_ATT_NWAY_ENABLE "nway_enable"
 
 #define RTL8370_OF_VAL_MODE_DISABLED "disabled"
 #define RTL8370_OF_VAL_MODE_SGMII_2_5G "sgmii-2.5g"
@@ -118,7 +137,8 @@ static const struct of_device_id realtek_rtl8370_of_table[] =
  */
 enum {
 	LED_PROFILE_OFF = 0,
-	LED_PROFILE_DEFAULT,
+	LED_PROFILE_DEFAULT_SERIAL,
+	LED_PROFILE_DEFAULT_PARALLEL,
 	LED_PROFILE_COUNT,
 
 };
@@ -149,22 +169,36 @@ static inline struct rtl8370_priv *acl_hw_to_rtl8370_priv(struct acl_hw *hw)
  * @brief Translates logical port to physical
  *
  * @param l - logical port
+ * @param priv - rtl8370's private structure
  * @return uint8_t - physical port
  */
-static inline uint8_t _rtl_port_l2p(uint8_t l)
+static inline uint8_t _rtl_port_l2p(struct rtl8370_priv *priv, uint8_t l)
 {
-	return (l < RTL8370_NUM_PORTS_LOG) ? port_mapping_table_l2p[l] : PHY_PORT_UNKNOWN;
+	return (l < RTL8370_PORT_MAX_LOG) ? priv->port_map->l2p[l] : PHY_PORT_UNKNOWN;
 }
 
 /**
  * @brief Translates physical port to logical
  *
  * @param p - physical port
+ * @param priv - rtl8370's private structure
  * @return uint8_t - logical port
  */
-static inline uint8_t _rtl_port_p2l(uint8_t p)
+static inline uint8_t _rtl_port_p2l(struct rtl8370_priv *priv, uint8_t p)
 {
-	return (p < RTL8370_NUM_PORTS_PHY) ? port_mapping_table_p2l[p] : UNDEFINE_PORT;
+	return (p < priv->swdev.ports) ? priv->port_map->p2l[p] : UNDEFINE_PORT;
+}
+
+/**
+ * @brief Test whether a port hasn't PHY
+ *
+ * @param p - logical port
+ * @param priv - rtl8370's private structure
+ * @return bool true for CPU port, false otherwise
+ */
+static inline bool _rtl_port_has_no_phy(struct rtl8370_priv *priv, uint8_t p)
+{
+	return (RT_ERR_OK == rtk_switch_isExtPort(_rtl_port_p2l(priv, p)));
 }
 
 /**
@@ -277,10 +311,11 @@ static int rtl8370_vlan_apply(struct rtl8370_priv *priv)
 	rtk_vlan_cfg_t vlan_cfg = { 0 };
 	rtk_portmask_t keep_mask_port = { 0 }, keep_mask_trunk = { 0 }, keep_default = { 0 };
 	rtk_svlan_memberCfg_t svlan_cfg = { 0 };
+	acl_entry_t acl_entry = { 0 };
 
 /* helper */
 #define IS_VLAN_AWARE(i) (priv->vlan_enabled & BIT(i))
-	uint16_t i, j, svlan_trunk = 0, svlan_port = 0;
+	uint16_t i, j, svlan_trunk = 0, svlan_port = 0, svlan_acl = 0;
 
 	/* Init 802.1q VLAN - should be called before PVID setting*/
 	rc = rtk_vlan_init();
@@ -297,17 +332,29 @@ static int rtl8370_vlan_apply(struct rtl8370_priv *priv)
 		for (j = 0; j < priv->swdev.ports; j++) {
 			if (svlan->lut[i].member & BIT(j)) {
 				if (svlan->lut[i].trunk & BIT(j)) {
-					RTK_PORTMASK_PORT_SET(keep_mask_trunk, _rtl_port_p2l(j));
+					RTK_PORTMASK_PORT_SET(keep_mask_trunk, _rtl_port_p2l(priv, j));
 				} else if (!IS_VLAN_AWARE(j)) {
-					RTK_PORTMASK_PORT_SET(keep_mask_port, _rtl_port_p2l(j));
+					RTK_PORTMASK_PORT_SET(keep_mask_port, _rtl_port_p2l(priv, j));
 				}
 			}
 		}
 		svlan_trunk |= svlan->lut[i].trunk;
-		svlan_port |= (svlan->lut[i].member & ~svlan->lut[i].trunk);
+		acl_entry.svid = svlan->lut[i].id;
+		acl_entry.type = ACL_RULE_VLAN_ASSIGNMENT;
+		if(!ubnt_acl_rule_get(&priv->hw_acl, &acl_entry)) {
+			/**
+			 * @note
+			 * SVLANs used by ACL are designated only for filtered traffic.
+			 * The reset of the traffic will be directed to default SVLAN.
+			 */
+			svlan_acl |= (svlan->lut[i].member & ~svlan->lut[i].trunk);
+		}	else {
+			svlan_port |= (svlan->lut[i].member & ~svlan->lut[i].trunk);
+		}
 	}
 
 /* helpers */
+#define IS_SVLAN_ACL(i) (svlan_acl & BIT(i))
 #define IS_SVLAN_TRUNK(i) (svlan_trunk & BIT(i))
 #define IS_SVLAN_PORT(i) (svlan_port & BIT(i))
 
@@ -317,21 +364,21 @@ static int rtl8370_vlan_apply(struct rtl8370_priv *priv)
 		/* Set PVID, use default SVLAN if port is a part of SVLAN */
 		uint16_t pvid = (IS_SVLAN_PORT(i) && !IS_VLAN_AWARE(i)) ? svlan->default_svid[i] :
 									  priv->pvid_table[i];
-		rc = rtk_vlan_portPvid_set(_rtl_port_p2l(i), pvid, RTL8370_DEFAULT_PRIORITY);
+		rc = rtk_vlan_portPvid_set(_rtl_port_p2l(priv, i), pvid, RTL8370_DEFAULT_PRIORITY);
 		if (RT_ERR_OK != rc) {
 			rtl_err(rc, "%s: Failed to set port (%d) to specified VLAN ID (PVID: %d)",
 				__func__, i, pvid);
 			return -ENODATA;
 		}
 
-		rc = rtk_port_efid_set(_rtl_port_p2l(i), priv->efid_table[i]);
+		rc = rtk_port_efid_set(_rtl_port_p2l(priv, i), priv->efid_table[i]);
 		if (RT_ERR_OK != rc) {
 			rtl_err(rc, "%s: Failed to set efid for port %d.", __func__,
 				priv->efid_table[i]);
 			return -ENODATA;
 		}
 
-		if ((((IS_SVLAN_PORT(i) && !IS_VLAN_AWARE(i)) || IS_SVLAN_TRUNK(i)))) {
+		if ((IS_SVLAN_PORT(i) && !IS_VLAN_AWARE(i)) || IS_SVLAN_TRUNK(i)) {
 			/*
 			* Set transparent/keep mode for trunk and all non VLAN aware ports.
 			* Don't apply VLAN ingress filter between these ports.
@@ -342,13 +389,13 @@ static int rtl8370_vlan_apply(struct rtl8370_priv *priv)
 			mask = &keep_default;
 		}
 
-		rc = rtk_vlan_transparent_set(_rtl_port_p2l(i), mask);
+		rc = rtk_vlan_transparent_set(_rtl_port_p2l(priv, i), mask);
 		if (RT_ERR_OK != rc) {
 			rtl_err(rc, "%s: Failed to set transparent mask for port %d",
 				__func__, i);
 			return -ENODATA;
 		}
-		rc = rtk_vlan_keep_set(_rtl_port_p2l(i), mask);
+		rc = rtk_vlan_keep_set(_rtl_port_p2l(priv, i), mask);
 		if (RT_ERR_OK != rc) {
 			rtl_err(rc, "%s: Failed to set keep mask for port %d", __func__, i);
 			return -ENODATA;
@@ -357,23 +404,25 @@ static int rtl8370_vlan_apply(struct rtl8370_priv *priv)
 
 	/* Apply 802.1q VLANs */
 	for (i = 0; i < priv->swdev.vlans; i++) {
-		if (!priv->vlan_table[i])
+		if (!priv->vlan_table[i].members)
 			continue;
 
 		RTK_PORTMASK_CLEAR(vlan_cfg.untag);
 		RTK_PORTMASK_CLEAR(vlan_cfg.mbr);
 		for (j = 0; j < priv->swdev.ports; j++) {
-			if (!(priv->vlan_table[i] & BIT(j)))
+			if (!(priv->vlan_table[i].members & BIT(j)))
 				continue;
 
-			RTK_PORTMASK_PORT_SET(vlan_cfg.mbr, _rtl_port_p2l(j));
+			RTK_PORTMASK_PORT_SET(vlan_cfg.mbr, _rtl_port_p2l(priv, j));
 			/* untag ports with pvid - port based vlans */
 			if (!(priv->pvid_tagged & BIT(j)) && (priv->pvid_table[j] == i)) {
-				RTK_PORTMASK_PORT_SET(vlan_cfg.untag, _rtl_port_p2l(j));
+				RTK_PORTMASK_PORT_SET(vlan_cfg.untag, _rtl_port_p2l(priv, j));
 			}
 		}
 		/* Apply FID */
-		vlan_cfg.fid_msti = priv->fid_table[i];
+		vlan_cfg.fid_msti = priv->vlan_table[i].fid;
+		/* Enable IVL learning */
+		vlan_cfg.ivl_en = (priv->vlan_table[i].ivl_enabled) ? ENABLED : DISABLED;
 		/* update VLAN table*/
 		rc = rtk_vlan_set(i, &vlan_cfg);
 		if (RT_ERR_OK != rc) {
@@ -394,12 +443,12 @@ static int rtl8370_vlan_apply(struct rtl8370_priv *priv)
 	 * @note when SVLAN filter is enabled, every port should be assigned to some SVLAN.
 	 * By default port is assigned in default SVLAN (RTL8370_DEFAULT_SVLAN_VID).
 	 */
-	if (svlan_port) {
+	if (svlan_port || svlan_acl) {
 		RTK_PORTMASK_CLEAR(svlan_cfg.untagport);
 		RTK_PORTMASK_CLEAR(svlan_cfg.memberport);
 		for (i = 0; i < priv->swdev.ports; i++) {
-			if (!IS_SVLAN_PORT(i)) {
-				RTK_PORTMASK_PORT_SET(svlan_cfg.memberport, _rtl_port_p2l(i));
+			if (!IS_SVLAN_PORT(i) || IS_SVLAN_ACL(i)) {
+				RTK_PORTMASK_PORT_SET(svlan_cfg.memberport, _rtl_port_p2l(priv, i));
 			}
 		}
 
@@ -429,9 +478,9 @@ static int rtl8370_vlan_apply(struct rtl8370_priv *priv)
 		for (j = 0; j < priv->swdev.ports; j++) {
 			if (!(svlan->lut[i].member & BIT(j)))
 				continue;
-			RTK_PORTMASK_PORT_SET(svlan_cfg.memberport, _rtl_port_p2l(j));
-			if (IS_SVLAN_PORT(j)) {
-				RTK_PORTMASK_PORT_SET(svlan_cfg.untagport, _rtl_port_p2l(j));
+			RTK_PORTMASK_PORT_SET(svlan_cfg.memberport, _rtl_port_p2l(priv, j));
+			if (IS_SVLAN_PORT(j) || IS_SVLAN_ACL(j)) {
+				RTK_PORTMASK_PORT_SET(svlan_cfg.untagport, _rtl_port_p2l(priv, j));
 			}
 		}
 
@@ -449,22 +498,22 @@ static int rtl8370_vlan_apply(struct rtl8370_priv *priv)
 	/* Enable VLAN ingress filter for VLAN aware ports, assign default SVLAN to all ports, add trunk */
 	for (i = 0; i < priv->swdev.ports; i++) {
 		rtk_enable_t enable = (IS_VLAN_AWARE(i) && !IS_SVLAN_TRUNK(i)) ? ENABLED : DISABLED;
-		rc = rtk_vlan_portIgrFilterEnable_set(_rtl_port_p2l(i), enable);
+		rc = rtk_vlan_portIgrFilterEnable_set(_rtl_port_p2l(priv, i), enable);
 		if (RT_ERR_OK != rc) {
 			rtl_err(rc, "%s: Failed to set VLAN ingress filter.", __func__);
 			return -ENODATA;
 		}
 
-		if (svlan_port) {
+		if (svlan_port || svlan_acl) {
 			if (IS_SVLAN_TRUNK(i)) {
-				rc = rtk_svlan_servicePort_add(_rtl_port_p2l(i));
+				rc = rtk_svlan_servicePort_add(_rtl_port_p2l(priv, i));
 				if (RT_ERR_OK != rc) {
 					rtl_err(rc, "%s: Failed to add SVLAN trunk port.",
 						__func__);
 					return -ENODATA;
 				}
 			} else {
-				rc = rtk_svlan_defaultSvlan_set(_rtl_port_p2l(i),
+				rc = rtk_svlan_defaultSvlan_set(_rtl_port_p2l(priv, i),
 								IS_SVLAN_PORT(i) ?
 									svlan->default_svid[i] :
 									RTL8370_DEFAULT_SVLAN_VID);
@@ -478,7 +527,7 @@ static int rtl8370_vlan_apply(struct rtl8370_priv *priv)
 	}
 
 	/* Enable/Disable egress VLAN filters */
-	rc = rtk_vlan_egrFilterEnable_set((priv->vlan_enabled || svlan_port) ? ENABLED : DISABLED);
+	rc = rtk_vlan_egrFilterEnable_set((priv->vlan_enabled || svlan_port || svlan_acl) ? ENABLED : DISABLED);
 	if (RT_ERR_OK != rc) {
 		rtl_err(rc, "%s: Failed to set VLAN egress filter.", __func__);
 		return -ENODATA;
@@ -504,7 +553,6 @@ static int rtl8370_vlan_init(struct rtl8370_priv *priv)
 	int i;
 
 	memset(priv->vlan_table, 0, sizeof(priv->vlan_table));
-	memset(priv->fid_table, 0, sizeof(priv->fid_table));
 	memset(priv->efid_table, 0, sizeof(priv->efid_table));
 	memset(priv->pvid_table, 0, sizeof(priv->pvid_table));
 	memset(&priv->svlan_table, 0, sizeof(priv->svlan_table));
@@ -518,7 +566,7 @@ static int rtl8370_vlan_init(struct rtl8370_priv *priv)
 	/* enable VLAN for all edge ports by default - prevent leaking */
 	priv->vlan_enabled = DISABLED;
 	for(i = 0; i < priv->swdev.ports; i++) {
-		if(RTL8370_HAS_NO_PHY(i))
+		if(_rtl_port_has_no_phy(priv, i))
 			continue;
 
 		priv->vlan_enabled |= BIT(i);
@@ -537,15 +585,20 @@ static int rtl8370_led_init(struct rtl8370_priv *priv)
 {
 	rtk_api_ret_t rc;
 	rtk_portmask_t port_mask;
+	rtk_led_congig_t led_group[2];
+	rtk_led_serialOutput_t serial_output;
+	int i = 0;
 
 	if (LED_PROFILE_OFF == priv->led_profile) {
 		return 0;
-	} /* else LED_PROFILE_DEFAULT */
+	} /* else LED_PROFILE_DEFAULT_XXX */
 
-	rc = rtk_led_operation_set(LED_OP_SERIAL);
+	rc = rtk_led_operation_set((priv->led_profile == LED_PROFILE_DEFAULT_SERIAL) ?
+					   LED_OP_SERIAL :
+					   LED_OP_PARALLEL);
 	if (RT_ERR_OK != rc) {
 		rtl_err(rc, "%s: Unable to set operation mode", __func__);
-		return -ENODATA;;
+		return -ENODATA;
 	}
 
 	rc = rtk_led_OutputEnable_set(ENABLED);
@@ -561,9 +614,12 @@ static int rtl8370_led_init(struct rtl8370_priv *priv)
 	RTK_PORTMASK_PORT_SET(port_mask, UTP_PORT2);
 	RTK_PORTMASK_PORT_SET(port_mask, UTP_PORT3);
 	RTK_PORTMASK_PORT_SET(port_mask, UTP_PORT4);
-	RTK_PORTMASK_PORT_SET(port_mask, UTP_PORT5);
-	RTK_PORTMASK_PORT_SET(port_mask, UTP_PORT6);
-	RTK_PORTMASK_PORT_SET(port_mask, UTP_PORT7);
+
+	if(priv->port_map->id == CHIP_RTL8370B) {
+		RTK_PORTMASK_PORT_SET(port_mask, UTP_PORT5);
+		RTK_PORTMASK_PORT_SET(port_mask, UTP_PORT6);
+		RTK_PORTMASK_PORT_SET(port_mask, UTP_PORT7);
+	}
 
 	/* only use LED group 0 & 1 */
 	rc = rtk_led_enable_set(LED_GROUP_0, &port_mask);
@@ -578,22 +634,28 @@ static int rtl8370_led_init(struct rtl8370_priv *priv)
 		return -ENODATA;
 	}
 
-	rc = rtk_led_serialModePortmask_set(SERIAL_LED_0_1, &port_mask);
+	if (LED_PROFILE_DEFAULT_SERIAL == priv->led_profile) {
+		serial_output = SERIAL_LED_0_1;
+		led_group[LED_GROUP_0] = LED_CONFIG_SPD1000ACT;
+		led_group[LED_GROUP_1] = LED_CONFIG_SPD10010ACT;
+	} else {
+		serial_output = SERIAL_LED_NONE;
+		led_group[LED_GROUP_0] = LED_CONFIG_SPD10010ACT;
+		led_group[LED_GROUP_1] = LED_CONFIG_SPD1000ACT;
+	}
+
+	rc = rtk_led_serialModePortmask_set(serial_output, &port_mask);
 	if (RT_ERR_OK != rc) {
-		rtl_err(rc, "%s: Unable to set port mask for led group", __func__);
+		rtl_err(rc, "%s: Unable to set port mask for led group (%d)", __func__, serial_output);
 		return -ENODATA;
 	}
 
-	rc = rtk_led_groupConfig_set(LED_GROUP_0, LED_CONFIG_SPD1000ACT);
-	if (RT_ERR_OK != rc) {
-		rtl_err(rc, "%s: Unable to set configuration for LED group 0", __func__);
-		return -ENODATA;
-	}
-
-	rc = rtk_led_groupConfig_set(LED_GROUP_1, LED_CONFIG_SPD10010ACT);
-	if (RT_ERR_OK != rc) {
-		rtl_err(rc, "%s: Unable to set configuration for LED group 1", __func__);
-		return -ENODATA;
+	for (i = 0; i < ARRAY_SIZE(led_group); ++i) {
+		rc = rtk_led_groupConfig_set(i, led_group[i]);
+		if (RT_ERR_OK != rc) {
+			rtl_err(rc, "%s: Unable to set configuration for LED group %d", __func__, i);
+			return -ENODATA;
+		}
 	}
 
 	rc = rtk_led_serialMode_set(LED_ACTIVE_HIGH);
@@ -623,7 +685,7 @@ static int rtl8370_port_isolation_apply(struct rtl8370_priv *priv)
 		} else {
 			port_mask = priv->port_isolation[i];
 		}
-		rc = rtk_port_isolation_set(_rtl_port_p2l(i), &port_mask);
+		rc = rtk_port_isolation_set(_rtl_port_p2l(priv, i), &port_mask);
 		if (RT_ERR_OK != rc) {
 			rtl_err(rc, "%s: Failed to set port isolation for port %d\n", __func__, i);
 			return -ENODATA;
@@ -687,13 +749,13 @@ static int rtl8370_phy_init(struct rtl8370_priv *priv)
 	mac_ability.forcemode = ENABLED;
 	mac_ability.duplex = PORT_FULL_DUPLEX;
 	mac_ability.link = PORT_LINKUP;
-	mac_ability.nway = DISABLED;
 	mac_ability.txpause = ENABLED;
 	mac_ability.rxpause = ENABLED;
 
-	for (i = 0; i < RTL8370_NUM_PORTS_CPU; ++i) {
+	for (i = 0; i < priv->port_map->cpu_cnt; ++i) {
 		mac_ability.speed = priv->mac_mode[i].speed;
-		cpu_port = _rtl_port_p2l(i ? RTL8370_CPU_PORT_1 : RTL8370_CPU_PORT_0);
+		mac_ability.nway = priv->mac_mode[i].nway;
+		cpu_port = _rtl_port_p2l(priv, priv->port_map->cpu[i]);
 
 		pr_info("Setting %d to s %d m %d rx %d tx %d\n", i, mac_ability.speed,
 			priv->mac_mode[i].mode, priv->mac_mode[i].delay_rx,
@@ -709,6 +771,13 @@ static int rtl8370_phy_init(struct rtl8370_priv *priv)
 							priv->mac_mode[i].delay_rx);
 			if (RT_ERR_OK != rc) {
 				rtl_err(rc, "%s: Unable to setup RGMII delay (CPU %d)", __func__, i);
+				return -ENODEV;
+			}
+		} else if (MODE_EXT_SGMII == priv->mac_mode[i].mode ||
+			   MODE_EXT_HSGMII == priv->mac_mode[i].mode) {
+			rc = rtk_port_sgmiiNway_set(cpu_port, mac_ability.nway);
+			if (RT_ERR_OK != rc) {
+				rtl_err(rc, "%s: Unable to setup SGMII Nway (CPU %d)", __func__, i);
 				return -ENODEV;
 			}
 		}
@@ -802,13 +871,14 @@ static int rtl8370_sw_reset_mibs(struct switch_dev *dev, const struct switch_att
 static int rtl8370_sw_reset_port_mibs(struct switch_dev *dev, const struct switch_attr *attr,
 				      struct switch_val *val)
 {
+	struct rtl8370_priv *priv = sw_to_rtl8370(dev);
 	rtk_api_ret_t rc;
 
 	if (val->port_vlan >= dev->ports) {
 		return -EINVAL;
 	}
 
-	rc = rtk_stat_port_reset(_rtl_port_p2l(val->port_vlan));
+	rc = rtk_stat_port_reset(_rtl_port_p2l(priv, val->port_vlan));
 	if (RT_ERR_OK != rc) {
 		rtl_err(rc, "%s: Failed to reset MIB counters for port %d.", __func__,
 			val->port_vlan);
@@ -842,7 +912,7 @@ static int rtl8370_sw_get_port_mib(struct switch_dev *dev, const struct switch_a
 		return -EINVAL;
 	}
 
-	rc = rtk_stat_port_getAll(_rtl_port_p2l(val->port_vlan), &port_counter);
+	rc = rtk_stat_port_getAll(_rtl_port_p2l(priv, val->port_vlan), &port_counter);
 	if (RT_ERR_OK != rc) {
 		rtl_err(rc, "%s: Failed to retrive stats for port %d.", __func__, val->port_vlan);
 		return -ENODATA;
@@ -938,14 +1008,14 @@ static int rtl8370_sw_get_vlan_info(struct switch_dev *dev, const struct switch_
 		return -EINVAL;
 	}
 
-	if (!priv->vlan_table[val->port_vlan]) {
+	if (!priv->vlan_table[val->port_vlan].members) {
 		return 0;
 	}
 
 	BUF_APPEND_PRINTF("VLAN %d: Ports: '", val->port_vlan);
 
 	for (i = 0; i < dev->ports; ++i) {
-		if (!(priv->vlan_table[val->port_vlan] & BIT(i))) {
+		if (!(priv->vlan_table[val->port_vlan].members & BIT(i))) {
 			continue;
 		}
 		BUF_APPEND_PRINTF("%d%s", i,
@@ -987,7 +1057,7 @@ static int rtl8370_sw_set_vlan_fid(struct switch_dev *dev, const struct switch_a
 		return -EINVAL;
 	}
 
-	priv->fid_table[val->port_vlan] = val->value.i;
+	priv->vlan_table[val->port_vlan].fid = val->value.i;
 
 	return 0;
 }
@@ -1009,7 +1079,55 @@ static int rtl8370_sw_get_vlan_fid(struct switch_dev *dev, const struct switch_a
 		return -EINVAL;
 	}
 
-	val->value.i = priv->fid_table[val->port_vlan];
+	val->value.i = priv->vlan_table[val->port_vlan].fid;
+
+	return 0;
+}
+
+/**
+ * @brief Set IVL (Independent Vlan Learning)
+ *
+ * @param dev - switch control structure
+ * @param attr - switch attribute structure
+ * @param val - switch value structure
+ * @return int - error from errno.h, 0 on success
+ */
+static int rtl8370_sw_set_ivl(struct switch_dev *dev, const struct switch_attr *attr,
+		   struct switch_val *val)
+{
+	struct rtl8370_priv *priv = sw_to_rtl8370(dev);
+
+	if (rtl8370_vlan_valid(dev, val->port_vlan)) {
+		return -EINVAL;
+	}
+
+	if (val->value.i < 0 || val->value.i > attr->max) {
+		return -EINVAL;
+	}
+
+	priv->vlan_table[val->port_vlan].ivl_enabled = !!val->value.i;
+
+	return 0;
+}
+
+/**
+ * @brief Get the state of IVL
+ *
+ * @param dev - switch control structure
+ * @param attr - switch attribute structure
+ * @param val - switch value structure
+ * @return int - error from errno.h, 0 on success
+ */
+static int rtl8370_sw_get_ivl(struct switch_dev *dev, const struct switch_attr *attr,
+		   struct switch_val *val)
+{
+	struct rtl8370_priv *priv = sw_to_rtl8370(dev);
+
+	if (rtl8370_vlan_valid(dev, val->port_vlan)) {
+		return -EINVAL;
+	}
+
+	val->value.i = priv->vlan_table[val->port_vlan].ivl_enabled;
 
 	return 0;
 }
@@ -1024,7 +1142,7 @@ static int rtl8370_sw_get_vlan_fid(struct switch_dev *dev, const struct switch_a
 static int rtl8370_sw_get_vlan_ports(struct switch_dev *dev, struct switch_val *val)
 {
 	struct rtl8370_priv *priv = sw_to_rtl8370(dev);
-	uint16_t ports = priv->vlan_table[val->port_vlan];
+	uint16_t ports = priv->vlan_table[val->port_vlan].members;
 
 	int i;
 	val->len = 0;
@@ -1066,7 +1184,7 @@ static int rtl8370_sw_set_vlan_ports(struct switch_dev *dev, struct switch_val *
 		return -EINVAL;
 	}
 
-	priv->vlan_table[val->port_vlan] = 0;
+	priv->vlan_table[val->port_vlan].members = 0;
 	port = &val->value.ports[0];
 	for (i = 0; i < val->len; ++i, ++port) {
 		if ((port->flags & BIT(SWITCH_PORT_FLAG_TAGGED)) &&
@@ -1079,7 +1197,7 @@ static int rtl8370_sw_set_vlan_ports(struct switch_dev *dev, struct switch_val *
 			/* Update the pvid to the vid we are untagging */
 			priv->pvid_table[port->id] = val->port_vlan;
 		}
-		priv->vlan_table[val->port_vlan] |= BIT(port->id);
+		priv->vlan_table[val->port_vlan].members |= BIT(port->id);
 	}
 
 	return 0;
@@ -1318,7 +1436,7 @@ static int rtl8370_sw_get_port_isolation(struct switch_dev *dev, const struct sw
 	port_members = &priv->port_isolation[port];
 
 	for (i = 0; i < dev->ports; ++i) {
-		if (!RTK_PORTMASK_IS_PORT_SET(*port_members, _rtl_port_p2l(i))) {
+		if (!RTK_PORTMASK_IS_PORT_SET(*port_members, _rtl_port_p2l(priv, i))) {
 			continue;
 		}
 		p_it = &val->value.ports[val->len++];
@@ -1354,7 +1472,7 @@ static int rtl8370_sw_set_port_isolation(struct switch_dev *dev, const struct sw
 
 	for (i = 0; i < val->len; ++i) {
 		p_it = &val->value.ports[i];
-		RTK_PORTMASK_PORT_SET(*port_members, _rtl_port_p2l(p_it->id));
+		RTK_PORTMASK_PORT_SET(*port_members, _rtl_port_p2l(priv, p_it->id));
 	}
 
 	return 0;
@@ -1490,9 +1608,10 @@ static int rtl8370_sw_reset_switch(struct switch_dev *dev)
  */
 static int rtl8370_sw_phy_write16(struct switch_dev *dev, int port, uint8_t reg, uint16_t value)
 {
+	struct rtl8370_priv *priv = sw_to_rtl8370(dev);
 	rtk_api_ret_t rc;
 
-	rc = rtk_port_phyReg_set(_rtl_port_p2l(port), reg, value);
+	rc = rtk_port_phyReg_set(_rtl_port_p2l(priv, port), reg, value);
 	if (RT_ERR_OK != rc) {
 		rtl_err(rc, "%s: Unable to write into port's PHY register", __func__);
 		return -ENODATA;
@@ -1511,11 +1630,12 @@ static int rtl8370_sw_phy_write16(struct switch_dev *dev, int port, uint8_t reg,
 static int rtl8370_sw_set_port_link(struct switch_dev *sw_dev, int port,
 				    struct switch_port_link *link)
 {
+	struct rtl8370_priv *priv = sw_to_rtl8370(sw_dev);
 	rtk_port_mac_ability_t mac_status;
 	rtk_api_ret_t rc;
 
 	/* don't allow to control MAC of CPU ports */
-	if (RTL8370_HAS_NO_PHY(port)) {
+	if (_rtl_port_has_no_phy(priv, port)) {
 		return -ENOTSUPP;
 	}
 
@@ -1553,7 +1673,7 @@ static int rtl8370_sw_set_port_link(struct switch_dev *sw_dev, int port,
 		}
 	}
 
-	rc = rtk_port_macForceLink_set(_rtl_port_p2l(port), &mac_status);
+	rc = rtk_port_macForceLink_set(_rtl_port_p2l(priv, port), &mac_status);
 	if (RT_ERR_OK != rc) {
 		rtl_err(rc, "%s: Unable to set port's MAC register", __func__);
 		return -ENODATA;
@@ -1572,6 +1692,7 @@ static int rtl8370_sw_set_port_link(struct switch_dev *sw_dev, int port,
  */
 static int rtl8370_sw_get_port_link(struct switch_dev *dev, int port, struct switch_port_link *link)
 {
+	struct rtl8370_priv *priv = sw_to_rtl8370(dev);
 	rtk_api_ret_t rc;
 	rtk_port_mac_ability_t mac_status;
 
@@ -1580,9 +1701,9 @@ static int rtl8370_sw_get_port_link(struct switch_dev *dev, int port, struct swi
 	}
 
 #ifdef CONFIG_SWCONFIG_UBNT_EXT
-	if (!RTL8370_HAS_NO_PHY(port)) {
+	if (!_rtl_port_has_no_phy(priv, port)) {
 		rtk_port_phy_data_t phy_status;
-		rc = rtk_port_phyReg_get(_rtl_port_p2l(port), MII_BMCR, &phy_status);
+		rc = rtk_port_phyReg_get(_rtl_port_p2l(priv, port), MII_BMCR, &phy_status);
 		if (RT_ERR_OK != rc) {
 			rtl_err(rc, "%s: Unable to read port's PHY control register", __func__);
 			return -ENODATA;
@@ -1593,7 +1714,7 @@ static int rtl8370_sw_get_port_link(struct switch_dev *dev, int port, struct swi
 	}
 #endif
 
-	rc = rtk_port_macStatus_get(_rtl_port_p2l(port), &mac_status);
+	rc = rtk_port_macStatus_get(_rtl_port_p2l(priv, port), &mac_status);
 	if (RT_ERR_OK != rc) {
 		rtl_err(rc, "%s: Unable to get port's MAC status.", __func__);
 		return -ENODATA;
@@ -1625,6 +1746,7 @@ static int rtl8370_sw_get_port_link(struct switch_dev *dev, int port, struct swi
 static int rtl8370_sw_get_port_stats(struct switch_dev *dev, int port,
 				     struct switch_port_stats *stats)
 {
+	struct rtl8370_priv *priv = sw_to_rtl8370(dev);
 	rtk_stat_counter_t cntr;
 	rtk_api_ret_t rc;
 
@@ -1633,7 +1755,7 @@ static int rtl8370_sw_get_port_stats(struct switch_dev *dev, int port,
 	}
 
 	/* Retrive RX octet counter */
-	rc = rtk_stat_port_get(_rtl_port_p2l(port), STAT_IfInOctets, &cntr);
+	rc = rtk_stat_port_get(_rtl_port_p2l(priv, port), STAT_IfInOctets, &cntr);
 	if (RT_ERR_OK != rc) {
 		rtl_err(rc, "%s: Unable to get port RX PHY stat.", __func__);
 		return -ENODATA;
@@ -1641,7 +1763,7 @@ static int rtl8370_sw_get_port_stats(struct switch_dev *dev, int port,
 	stats->rx_bytes = cntr;
 
 	/* Retrive TX octet counter */
-	rc = rtk_stat_port_get(_rtl_port_p2l(port), STAT_IfOutOctets, &cntr);
+	rc = rtk_stat_port_get(_rtl_port_p2l(priv, port), STAT_IfOutOctets, &cntr);
 	if (RT_ERR_OK != rc) {
 		rtl_err(rc, "%s: Unable to get port TX PHY stat.", __func__);
 		return -ENODATA;
@@ -1662,11 +1784,13 @@ static int rtl8370_sw_get_port_stats(struct switch_dev *dev, int port,
 static int rtl8370_acl_rule_sw_to_hw(struct acl_hw *hw, acl_entry_t *entry,
 				    void *data_out)
 {
+	struct rtl8370_priv *priv = acl_hw_to_rtl8370_priv(hw);
+	struct rtl8370_svlan_table *svlan = &priv->svlan_table;
 	rtk_filter_action_t *act;
 	rtk_filter_cfg_t *cfg;
 	rtk_filter_field_t *fld;
 	rtk_api_ret_t rc;
-	int i;
+	int i, j;
 	rt8370_acl_entry_hw_t *entry_hw = data_out;
 
 	if (NULL == entry_hw) {
@@ -1678,47 +1802,81 @@ static int rtl8370_acl_rule_sw_to_hw(struct acl_hw *hw, acl_entry_t *entry,
 	fld = &entry_hw->in.fld;
 
 	memset(entry_hw, 0, sizeof(*entry_hw));
-	/*
-	 * NOTE : In our case there is harcoded action for ACL_RULE_MAC type which is
-	 * redirect incoming frame from port_src with SA to port_dst.
-	 */
-	if (ACL_RULE_MAC == entry->type) {
-		/* Set pattern */
-		fld->fieldType = FILTER_FIELD_SMAC;
-		if (ubnt_mac_zero_addr(&entry->mac_sa)) {
-			fld->filter_pattern_union.smac.dataType = FILTER_FIELD_DATA_MASK;
-			memcpy(fld->filter_pattern_union.smac.value.octet, entry->mac_sa.uc,
-			       sizeof(fld->filter_pattern_union.smac.value.octet));
-			memset(fld->filter_pattern_union.smac.mask.octet, 0xFF,
-			       sizeof(fld->filter_pattern_union.smac.value.octet));
-		}
-		fld->next = NULL;
 
-		rc = rtk_filter_igrAcl_field_add(cfg, fld);
-		if (RT_ERR_OK != rc) {
-			rtl_err(rc, "%s: Unable to add pattern field to the ACL list", __func__);
-			return -ENODATA;
-		}
+	switch(entry->type) {
+		/*
+		* NOTE : In our case there is harcoded action for ACL_RULE_PORT_REDIRECTION type which is
+		* redirect incoming frame from port_src with SA to port_dst.
+		*/
+		case ACL_RULE_PORT_REDIRECTION:
+			/* Set pattern */
+			fld->fieldType = FILTER_FIELD_SMAC;
+			if (ubnt_mac_zero_addr(&entry->mac_sa)) {
+				fld->filter_pattern_union.smac.dataType = FILTER_FIELD_DATA_MASK;
+				memcpy(fld->filter_pattern_union.smac.value.octet, entry->mac_sa.uc,
+					sizeof(fld->filter_pattern_union.smac.value.octet));
+				memset(fld->filter_pattern_union.smac.mask.octet, 0xFF,
+					sizeof(fld->filter_pattern_union.smac.value.octet));
+			}
+			fld->next = NULL;
 
-		/* Destination port */
-		act->actEnable[FILTER_ENACT_REDIRECT] = TRUE;
-		RTK_PORTMASK_ALLPORT_SET(cfg->activeport.mask);
-		cfg->invert = FALSE;
+			rc = rtk_filter_igrAcl_field_add(cfg, fld);
+			if (RT_ERR_OK != rc) {
+				rtl_err(rc, "%s: Unable to add pattern field to the ACL list", __func__);
+				return -ENODATA;
+			}
 
-		for (i = 0; i < hw->ops->max_ports; ++i) {
 			/* Destination port */
-			if (entry->port_dst & BIT(i)) {
-				RTK_PORTMASK_PORT_SET(act->filterPortmask, _rtl_port_p2l(i));
-			}
-			/* Source port */
-			if (entry->port_src & BIT(i)) {
-				RTK_PORTMASK_PORT_SET(cfg->activeport.value, _rtl_port_p2l(i));
-			}
-		}
-	} else {
-		return -EOPNOTSUPP;
-	}
+			act->actEnable[FILTER_ENACT_REDIRECT] = TRUE;
+			RTK_PORTMASK_ALLPORT_SET(cfg->activeport.mask);
+			cfg->invert = FALSE;
 
+			for (i = 0; i < hw->max_ports; ++i) {
+				/* Destination port */
+				if (entry->port_dst & BIT(i)) {
+					RTK_PORTMASK_PORT_SET(act->filterPortmask, _rtl_port_p2l(priv, i));
+				}
+				/* Source port */
+				if (entry->port_src & BIT(i)) {
+					RTK_PORTMASK_PORT_SET(cfg->activeport.value, _rtl_port_p2l(priv, i));
+				}
+			}
+			break;
+
+		case ACL_RULE_VLAN_ASSIGNMENT:
+			fld->fieldType = FILTER_FIELD_ETHERTYPE;
+			fld->filter_pattern_union.etherType.dataType = FILTER_FIELD_DATA_MASK;
+			fld->filter_pattern_union.etherType.value = entry->ether_type;
+			fld->filter_pattern_union.etherType.mask = 0xffff;
+			fld->next = NULL;
+
+			rc = rtk_filter_igrAcl_field_add(cfg, fld);
+			if (RT_ERR_OK != rc) {
+				rtl_err(rc, "%s: Unable to add pattern field to the ACL list", __func__);
+				return -ENODATA;
+			}
+
+			act->actEnable[FILTER_ENACT_SVLAN_EGRESS] = TRUE;
+			for (i = 0; i < RTL8370_NUM_SVLAN; ++i) {
+				if (svlan->lut[i].id == entry->svid) {
+					act->filterSvlanVid = entry->svid;
+					RTK_PORTMASK_ALLPORT_SET(cfg->activeport.mask);
+					for (j = 0; j < hw->max_ports; ++j) {
+						if((svlan->lut[i].member & ~svlan->lut[i].trunk) & BIT(j)) {
+							RTK_PORTMASK_PORT_SET(cfg->activeport.value, _rtl_port_p2l(priv, j));
+						}
+					}
+				}
+			}
+
+			if(!act->filterSvlanVid) {
+				return -ENODATA;
+			}
+			cfg->invert = FALSE;
+			break;
+		default:
+			return -EOPNOTSUPP;
+	}
 	return 0;
 }
 
@@ -1749,19 +1907,20 @@ static int rtl8370_acl_hw_flush(struct acl_hw *hw)
  */
 static int rtl8370_acl_hw_enable(struct acl_hw *hw, uint8_t enable)
 {
+	struct rtl8370_priv *priv = acl_hw_to_rtl8370_priv(hw);
 	rtk_api_ret_t rc;
 	int i = 0;
 
 	/* Enable ACL module */
-	for (i = 0; i < hw->ops->max_ports; ++i) {
+	for (i = 0; i < hw->max_ports; ++i) {
 
-		rc = rtk_filter_igrAcl_state_set(_rtl_port_p2l(i), enable ? ENABLED : DISABLED);
+		rc = rtk_filter_igrAcl_state_set(_rtl_port_p2l(priv, i), enable ? ENABLED : DISABLED);
 		if (RT_ERR_OK != rc) {
 			rtl_err(rc, "%s: Failed to enable the ACL for port %d.\n", __func__, i);
 			return -EIO;
 		}
 
-		rc = rtk_filter_igrAcl_unmatchAction_set(_rtl_port_p2l(i), FILTER_UNMATCH_PERMIT);
+		rc = rtk_filter_igrAcl_unmatchAction_set(_rtl_port_p2l(priv, i), FILTER_UNMATCH_PERMIT);
 		if (RT_ERR_OK != rc) {
 			rtl_err(rc, "%s: Failed to set unmatch action of ACL.", __func__);
 			return -EIO;
@@ -1882,7 +2041,22 @@ static int rtl8370_sw_set_acl_redirect(struct switch_dev *dev, const struct swit
 					   struct switch_val *val)
 {
 	struct rtl8370_priv *priv = sw_to_rtl8370(dev);
-	return ubnt_acl_rule_process(&priv->hw_acl, val->value.s, ACL_RULE_MAC);
+	return ubnt_acl_rule_process(&priv->hw_acl, val->value.s, ACL_RULE_PORT_REDIRECTION);
+}
+
+/**
+ * @brief Assign SVLAN/VLAN to a specific traffic
+ *
+ * @param dev - switch control structure
+ * @param attr - switch attribute structure
+ * @param val - switch value structure
+ * @return int - error from errno.h, 0 on success
+ */
+static int rtl8370_sw_set_acl_vlan_assign(struct switch_dev *dev, const struct switch_attr *attr,
+					   struct switch_val *val)
+{
+	struct rtl8370_priv *priv = sw_to_rtl8370(dev);
+	return ubnt_acl_rule_process(&priv->hw_acl, val->value.s, ACL_RULE_VLAN_ASSIGNMENT);
 }
 
 /**
@@ -2022,6 +2196,66 @@ static int rtl8370_sw_set_flush_arl_table(struct switch_dev *dev, const struct s
 	return 0;
 }
 
+/**
+ * @brief Get ARL table
+ *
+ * @param dev - switch control structure
+ * @param attr - switch attribute structure
+ * @param val - switch value structure
+ * @return int - error from errno.h, 0 on success
+ */
+static int rtl8370_sw_get_arl_table(struct switch_dev *dev, const struct switch_attr *attr,
+				   struct switch_val *val)
+{
+	struct rtl8370_priv *priv = sw_to_rtl8370(dev);
+	rtk_uint32 i;
+	rtk_uint32 address = 0;
+	rtk_l2_ucastAddr_t l2_data;
+	rtk_l2_ipMcastAddr_t ipMcastAddr;
+
+	/** Output string */
+	char *str = priv->buffer;
+	uint32_t str_len = 0;
+	uint32_t str_max = sizeof(priv->buffer);
+
+	BUF_APPEND_PRINTF("\nhash  port(0:18)      fid   vid  mac-address    ivl  efid\n");
+	while (RT_ERR_OK == rtk_l2_addr_next_get(READMETHOD_NEXT_L2UC, UTP_PORT0, &address, &l2_data)) {
+		BUF_APPEND_PRINTF("%03x   ", l2_data.address);
+		for (i = 0; i < priv->swdev.ports; i++) {
+			BUF_APPEND_PRINTF("%c", (_rtl_port_l2p(priv, l2_data.port) == i ) ? '1' : '-');
+		}
+
+		BUF_APPEND_PRINTF("      %2d", l2_data.fid);
+		BUF_APPEND_PRINTF("  %4d", l2_data.cvid);
+		BUF_APPEND_PRINTF("  %02x%02x%02x%02x%02x%02x", l2_data.mac.octet[0],
+		l2_data.mac.octet[1], l2_data.mac.octet[2], l2_data.mac.octet[3],
+		l2_data.mac.octet[4], l2_data.mac.octet[5]);
+		BUF_APPEND_PRINTF("  %4d", l2_data.ivl);
+		BUF_APPEND_PRINTF("  %4d\n", l2_data.efid);
+		address++;
+	}
+
+	BUF_APPEND_PRINTF("\n");
+
+	address = 0;
+	while (RT_ERR_OK == rtk_l2_ipMcastAddr_next_get(&address, &ipMcastAddr)) {
+		BUF_APPEND_PRINTF("%03x   ", ipMcastAddr.address);
+		for (i = 0; i < priv->swdev.ports; i++) {
+			BUF_APPEND_PRINTF("%c", (RTK_PORTMASK_IS_PORT_SET(ipMcastAddr.portmask, _rtl_port_l2p(priv, i)) ? '1' : '-'));
+		}
+		BUF_APPEND_PRINTF("                ");
+		BUF_APPEND_PRINTF("01005E%06x\n", (ipMcastAddr.dip & 0xefffff));
+		address++;
+	}
+
+	val->value.s = str;
+	val->len = str_len;
+
+	return 0;
+error:
+	return -ENOMEM;
+}
+
 #ifdef CONFIG_SWCONFIG_UBNT_EXT
 
 /**
@@ -2090,7 +2324,7 @@ static int rtl8370_uext_get_port_mib(struct switch_dev *dev, struct switch_port_
 	}
 
 	for (i = 0; i < UEXT_RTL83XX_MIB_COUNT; ++i) {
-		rc = rtk_stat_port_get(_rtl_port_p2l(port), (rtk_stat_port_type_t)cnt[i], &cnt[i]);
+		rc = rtk_stat_port_get(_rtl_port_p2l(priv, port), (rtk_stat_port_type_t)cnt[i], &cnt[i]);
 		if (RT_ERR_OK != rc) {
 			return (RT_ERR_NOT_INIT == rc) ? -EBUSY : -ENODATA;
 		}
@@ -2201,7 +2435,7 @@ static int rtl8370_uext_get_arl_entry(struct switch_dev *dev, struct uext_arl_lu
 			return rc;
 		}
 
-		entry_out->port = _rtl_port_l2p(rtl8370_entry.port);
+		entry_out->port = _rtl_port_l2p(priv, rtl8370_entry.port);
 		entry_out->vid = rtl8370_entry.cvid;
 		memcpy(entry_out->mac, rtl8370_entry.mac.octet, sizeof(entry_out->mac));
 		(*rtl_it)++;
@@ -2234,7 +2468,7 @@ static int rtl8370_arl_age_time_apply(struct rtl8370_priv *priv)
 
 	/* Enable ARL aging for all ports by default */
 	for (i = 0; i < priv->swdev.ports; ++i) {
-		rc = rtk_l2_agingEnable_set(_rtl_port_p2l(i), ENABLED);
+		rc = rtk_l2_agingEnable_set(_rtl_port_p2l(priv, i), ENABLED);
 		if (RT_ERR_OK != rc) {
 			rtl_err(rc, "%s: Failed to enable ARL aging port %d.", __func__, i);
 			return -EIO;
@@ -2319,6 +2553,13 @@ static struct switch_attr rtl8370_globals[] = {
 		.get = NULL,
 	},
 	{
+		.type = SWITCH_TYPE_STRING,
+		.name = "acl_assign_vlan",
+		.description = "Assign VLAN/SVLAN to a specific traffic",
+		.set = rtl8370_sw_set_acl_vlan_assign,
+		.get = NULL,
+	},
+	{
 		.type = SWITCH_TYPE_INT,
 		.name = "enable_acl",
 		.description = "Enable ACL mode",
@@ -2339,6 +2580,13 @@ static struct switch_attr rtl8370_globals[] = {
 		.description = "Flush ARL table",
 		.set = rtl8370_sw_set_flush_arl_table,
 	},
+	{
+		.type = SWITCH_TYPE_STRING,
+		.name = "arl_table",
+		.description = "Get ARL table",
+		.set = NULL,
+		.get = rtl8370_sw_get_arl_table
+	}
 };
 
 /**
@@ -2404,7 +2652,16 @@ static struct switch_attr rtl8370_vlan[] = {
 		.max = RTK_FID_MAX,
 		.set = rtl8370_sw_set_vlan_fid,
 		.get = rtl8370_sw_get_vlan_fid,
-	}
+	},
+	{
+		.type = SWITCH_TYPE_INT,
+		.name = "enable_ivl",
+		.description = "Enable IVL",
+		.set = rtl8370_sw_set_ivl,
+		.get = rtl8370_sw_get_ivl,
+		.max = 1,
+		.ofs = 1
+	},
 };
 
 #ifdef CONFIG_SWCONFIG_UBNT_EXT
@@ -2486,7 +2743,6 @@ const struct acl_hw_ops rtl8370_acl_ops = {
 	.rule_set = rtl8370_acl_hw_rule_set,
 	.rule_sw_to_hw = rtl8370_acl_rule_sw_to_hw,
 	.max_entries = RTL8370_NUM_ACL_ENTRIES,
-	.max_ports = RTL8370_NUM_PORTS_PHY,
 
 	.rule_get = NULL,
 	.rule_hw_to_sw = NULL,
@@ -2579,44 +2835,6 @@ static int rtl8370_phy_aneg_done(struct phy_device *phydev)
 }
 
 /**
- * @brief RTL8370 probing & initialization
- *
- * @param priv - rtl8370's private structure
- * @return error from errno.h, 0 on success
- */
-
-static int rtl8370_switch_detected(struct rtl8370_priv *priv)
-{
-	struct switch_dev *swdev;
-	rtk_api_ret_t rc;
-	switch_chip_t switch_chip;
-
-	/* probe switch */
-	rc = rtk_switch_probe(&switch_chip);
-
-	if (RT_ERR_OK != rc) {
-		return -ENXIO;
-	}
-
-	if (switch_chip != CHIP_RTL8370B) {
-		return -ENXIO;
-	}
-
-	swdev = &priv->swdev;
-
-	swdev->name = "RTL8370MB";
-	swdev->cpu_port = RTL8370_CPU_PORT_0;
-	swdev->ports = RTL8370_NUM_PORTS_PHY;
-	swdev->vlans = RTL8370_NUM_VIDS;
-	swdev->ops = &rtl8370_sw_ops;
-	swdev->alias = dev_name(&priv->mii_bus->dev);
-
-	rtl8370_setup(priv, priv->reset_on_init);
-
-	return 0;
-}
-
-/**
  * @brief Alloc & init rtl8370's private structure
  *
  * @param phydev - PHY device control structure
@@ -2669,7 +2887,7 @@ static void rtl8370_of_defaults(struct rtl8370_priv *priv)
 
 	priv->reset_on_init = false;
 
-	for (i = 0; i < RTL8370_NUM_PORTS_CPU; ++i) {
+	for (i = 0; i < priv->port_map->cpu_cnt; ++i) {
 		memset(&priv->mac_mode[i], 0, sizeof(priv->mac_mode[i]));
 		priv->mac_mode[i].mode = MODE_EXT_1000X;
 		priv->mac_mode[i].speed = PORT_SPEED_1000M;
@@ -2743,7 +2961,7 @@ static void rtl8370_of_setup(struct rtl8370_priv *priv, struct phy_device *phyde
 								 &reg)) {
 						continue;
 					}
-					if (reg >= 0 && reg < RTL8370_NUM_PORTS_CPU) {
+					if (reg >= 0 && reg < priv->port_map->cpu_cnt) {
 						mac_mode = &priv->mac_mode[reg];
 						if (of_property_read_string(
 							    child, RTL8370_OF_ATT_MAC_MODE, &str)) {
@@ -2758,12 +2976,132 @@ static void rtl8370_of_setup(struct rtl8370_priv *priv, struct phy_device *phyde
 						if (!of_property_read_u32(child, RTL8370_OF_ATT_RX_DELAY, &reg)) {
 							mac_mode->delay_rx = reg;
 						}
+
+						mac_mode->nway =
+							of_property_read_bool(child, RTL8370_OF_ATT_NWAY_ENABLE) ?
+								ENABLED :
+								DISABLED;
 					}
 				}
 				of_node_put(np_mac);
 			}
 		}
 	}
+}
+
+/**
+ * @brief Assert GPIO reset signal
+ *
+ * @param priv - rtl8370's private structure
+ * @param value - reset signal state
+ */
+static inline void rtl8370_switch_reset_set(struct rtl8370_priv *priv, unsigned value)
+{
+	if (gpio_cansleep(priv->reset_pin)) {
+		gpio_set_value_cansleep(priv->reset_pin, value);
+	} else {
+		gpio_set_value(priv->reset_pin, value);
+	}
+}
+
+/**
+ * @brief RTL8370 handle GPIO reset
+ *
+ * @param priv - rtl8370's private structure
+ * @param phydev - PHY device control structure
+ */
+static void rtl8370_switch_reset(struct rtl8370_priv *priv, struct phy_device *phydev)
+{
+	struct device_node *np_dev = NULL;
+	int rc = 0;
+	uint32_t reg = 0;
+
+	for_each_matching_node (np_dev, realtek_rtl8370_of_table) {
+		if (!of_property_read_u32(np_dev, RTL8370_OF_ATT_PHY_ADDR, &reg)) {
+			if (reg != phydev->addr) {
+				continue;
+			}
+
+			priv->reset_pin = of_get_named_gpio(np_dev, RTL8370_OF_ATT_RESET_GPIOS, 0);
+			if (!gpio_is_valid(priv->reset_pin)) {
+				of_node_put(np_dev);
+				goto of_break;
+			}
+
+			rc = gpio_request_one(priv->reset_pin, GPIOF_OUT_INIT_LOW, "rt8370,reset-pin");
+			if (rc) {
+				rtl_warn("rtl8370: failed to request reset GPIO %d\n", rc);
+				goto of_break;
+			}
+
+			rtl8370_switch_reset_set(priv, 0);
+			/* sleep ~ 1 ms */
+			usleep_range(1000, 1100);
+			/* set reset HIGH */
+			rtl8370_switch_reset_set(priv, 1);
+			/* wait 500 ms */
+			mdelay(500);
+			/* free reset GPIO */
+			gpio_free(priv->reset_pin);
+of_break:
+			of_node_put(np_dev);
+			break;
+		}
+	}
+}
+
+/**
+ * @brief RTL8370 probing & initialization
+ *
+ * @param priv - rtl8370's private structure
+ * @param phydev - PHY device control structure
+ * @return error from errno.h, 0 on success
+ */
+
+static int rtl8370_switch_detected(struct rtl8370_priv *priv, struct phy_device *phydev)
+{
+	struct switch_dev *swdev;
+	rtk_api_ret_t rc;
+	switch_chip_t switch_chip;
+	int i = 0;
+
+	/* toggle reset if possible */
+	rtl8370_switch_reset(priv, phydev);
+
+	/* probe switch */
+	rc = rtk_switch_probe(&switch_chip);
+
+	if (RT_ERR_OK != rc) {
+		return -ENXIO;
+	}
+
+	priv->port_map = NULL;
+	for (i = 0; i < ARRAY_SIZE(_rtl_port_mapping); ++i) {
+		if(_rtl_port_mapping[i].id == switch_chip) {
+			priv->port_map = &_rtl_port_mapping[i];
+		}
+	}
+
+	if(NULL == priv->port_map) {
+		return -ENXIO;
+	}
+
+	swdev = &priv->swdev;
+	swdev->cpu_port = priv->port_map->cpu[0];
+	swdev->name = priv->port_map->name;
+	swdev->ports = priv->port_map->port_cnt;
+	swdev->vlans = RTL8370_NUM_VIDS;
+	swdev->ops = &rtl8370_sw_ops;
+	swdev->alias = dev_name(&priv->mii_bus->dev);
+
+	/* set port count for ubnt_acl */
+	priv->hw_acl.max_ports = swdev->ports;
+
+	rtl8370_of_setup(priv, phydev);
+
+	rtl8370_setup(priv, priv->reset_on_init);
+
+	return 0;
 }
 
 /**
@@ -2799,9 +3137,7 @@ static int rtl8370_phy_probe(struct phy_device *phydev)
 
 	priv->mii_bus = phydev->bus;
 
-	rtl8370_of_setup(priv, phydev);
-
-	ret = rtl8370_switch_detected(priv);
+	ret = rtl8370_switch_detected(priv, phydev);
 	if (ret) {
 		goto free_priv;
 	}

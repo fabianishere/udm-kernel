@@ -486,6 +486,7 @@ struct ar8xxx_priv {
 	uint32_t vlan;
 	u16 vlan_id[AR8X16_MAX_VLANS];
 	u8 vlan_table[AR8X16_MAX_VLANS];
+	u8 use_ivl[AR8X16_MAX_VLANS]; /* independent VLAN learning */
 	u8 vlan_tagged;
 	u16 pvid[AR8X16_MAX_PORTS];
 	int arl_age_time;
