@@ -749,8 +749,8 @@ static int rtl8370_phy_init(struct rtl8370_priv *priv)
 	mac_ability.forcemode = ENABLED;
 	mac_ability.duplex = PORT_FULL_DUPLEX;
 	mac_ability.link = PORT_LINKUP;
-	mac_ability.txpause = ENABLED;
-	mac_ability.rxpause = ENABLED;
+	mac_ability.txpause = DISABLED;
+	mac_ability.rxpause = DISABLED;
 
 	for (i = 0; i < priv->port_map->cpu_cnt; ++i) {
 		mac_ability.speed = priv->mac_mode[i].speed;
@@ -1856,15 +1856,19 @@ static int rtl8370_acl_rule_sw_to_hw(struct acl_hw *hw, acl_entry_t *entry,
 				return -ENODATA;
 			}
 
+			/* ! Forwarding action must be defined as well ! */
+			act->actEnable[FILTER_ENACT_REDIRECT] = TRUE;
 			act->actEnable[FILTER_ENACT_SVLAN_EGRESS] = TRUE;
 			for (i = 0; i < RTL8370_NUM_SVLAN; ++i) {
 				if (svlan->lut[i].id == entry->svid) {
 					act->filterSvlanVid = entry->svid;
 					RTK_PORTMASK_ALLPORT_SET(cfg->activeport.mask);
+					RTK_PORTMASK_CLEAR(act->filterPortmask);
 					for (j = 0; j < hw->max_ports; ++j) {
-						if((svlan->lut[i].member & ~svlan->lut[i].trunk) & BIT(j)) {
+						if (svlan->lut[i].trunk & BIT(j))
+							RTK_PORTMASK_PORT_SET(act->filterPortmask, _rtl_port_p2l(priv, j));
+						else if (svlan->lut[i].member & BIT(j))
 							RTK_PORTMASK_PORT_SET(cfg->activeport.value, _rtl_port_p2l(priv, j));
-						}
 					}
 				}
 			}

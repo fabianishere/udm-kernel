@@ -7,6 +7,7 @@
 #include <linux/init.h>
 #include <linux/list.h>
 #include <linux/if_ether.h>
+#include <linux/ctype.h>
 
 #include "ubnt_acl.h"
 
@@ -101,6 +102,12 @@ static int ubnt_acl_rule_match(acl_entry_t *entry_a, acl_entry_t *entry_b)
 		case ACL_RULE_VLAN_ASSIGNMENT:
 			rc = !(entry_a->svid == entry_b->svid);
 			break;
+		case ACL_RULE_ETHVLAN:
+			if (entry_a->port_dst == entry_b->port_dst &&
+			    entry_a->port_src == entry_b->port_src &&
+			    entry_a->ether_type == entry_b->ether_type)
+				rc = 0;
+			break;
 		default:
 			break;
 		}
@@ -127,6 +134,12 @@ static int ubnt_acl_rule_update(acl_entry_t *entry_old, acl_entry_t *entry_new)
 		break;
 	case ACL_RULE_VLAN_ASSIGNMENT:
 		entry_old->ether_type = entry_new->ether_type;
+		break;
+	case ACL_RULE_ETHVLAN:
+		entry_old->ether_type = entry_new->ether_type;
+		entry_old->force_vtu = entry_new->force_vtu;
+		entry_old->vlan_src = entry_new->vlan_src;
+		entry_old->vlan_dst = entry_new->vlan_dst;
 		break;
 	default:
 		break;
@@ -225,6 +238,7 @@ static int ubnt_acl_rule_del(struct acl_hw *hw, acl_entry_t *entry_out)
 				entry->port_src &= ~(entry_out->port_src);
 				modified = !!(entry->port_src);
 				break;
+			case ACL_RULE_ETHVLAN:
 			case ACL_RULE_VLAN_ASSIGNMENT:
 				modified = false;
 				break;
@@ -261,7 +275,10 @@ static int ubnt_acl_rule_del(struct acl_hw *hw, acl_entry_t *entry_out)
 	X(PORT_DST, "port_dst")     \
 	X(PORTS_SRC, "ports_src")   \
 	X(ETHER_TYPE, "ether_type") \
-	X(SVID, "svid")
+	X(SVID, "svid")             \
+	X(VLAN_SRC, "vlan_src")     \
+	X(VLAN_DST, "vlan_dst")     \
+	X(FORCE_VTU, "force_vtu")
 
 
 #define KEY_OP(X) \
@@ -291,154 +308,118 @@ static const char *acl_keywords[] = {
 };
 
 /**
- * @brief Parse the MAC address and fill the relevant field in the ACL entry
+ * @brief Parse the MAC address and store result in `mac`.
  *
- * @param hw - platform dependent ACL control structure
- * @param mac_str - MAC address string
- * @param entry - the ACL entry
- * @param key_id - parsed key
- * @return int - error from errno.h, 0 on success
+ * @param rule - mac address of ACL rule.
+ * @param mac - mac address of ACL mac.
+ * @return char* - string after value or NULL on error.
+ * @note single quote tolerant.
  */
-static int ubnt_acl_rule_mac_parse(struct acl_hw *hw, const char *mac_str, acl_entry_t *entry,
-				   int key_id)
+static const char *acl_parse_mac(const char *rule, u8 mac[6])
 {
-	uint8_t mac[ETH_ALEN];
-	acl_mac_t *mac_p;
+	while (isblank(*rule) || *rule == '\'')
+		rule++;
 
-	switch (key_id) {
-	case ACL_KEY_MAC_DST:
-		mac_p = &entry->mac_da;
-		break;
-	case ACL_KEY_MAC_SRC:
-		mac_p = &entry->mac_sa;
-		break;
-	default:
-		return -EOPNOTSUPP;
-	}
+	if (*rule == '*') // in original implementation `*` any mac, no rule
+		;
+	else if (sscanf(rule, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx",
+			&mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5])
+			== ETH_ALEN)
+		;
+	else
+		return NULL;
 
-	if ('*' == *mac_str) {
-		return 0;
-	}
-
-	if (ETH_ALEN == sscanf(mac_str, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx%*c", &mac[0], &mac[1],
-			       &mac[2], &mac[3], &mac[4], &mac[5])) {
-		memcpy(mac_p->uc, mac, ETH_ALEN);
-
-		/* Don't allow the MAC address with all bytes set to zero */
-		if (!ubnt_mac_zero_addr(mac_p)) {
-			return -EINVAL;
-		}
-		return 0;
-	} else {
-		return -EINVAL;
-	}
+	while (isgraph(*rule))
+		rule++;
+	return rule;
 }
 
 /**
- * @brief Parse port's numbers and fill the relevant field in the ACL entry
+ * @brief Parse the HEX/DEC value and store result in `value`.
  *
- * @param hw - platform dependent ACL control structure
- * @param str - port's numbers string
- * @param entry - the ACL entry
- * @param key_id - parsed key
- * @return int - error from errno.h, 0 on success
+ * @param rule - value to be parsed, value starting with `0x` considered HEX.
+ * @param value - stored result.
+ * @return char* - string after value or NULL on error.
+ * @note single quote tolerant.
  */
-static int ubnt_acl_rule_ports_parse(struct acl_hw *hw, const char *str, acl_entry_t *entry,
-				     int key_id)
+static const char *acl_parse_value(const char *rule, uint16_t *value)
 {
-	int port_num = 0, port_max_cnt = 0, read, noi, rc = -EINVAL;
-	int *port_p;
+	while (isblank(*rule) || *rule == '\'')
+		rule++;
 
-	switch (key_id) {
-	case ACL_KEY_PORT_DST:
-		port_p = &entry->port_dst;
-		port_max_cnt = 1;
-		break;
-	case ACL_KEY_PORTS_SRC:
-		port_p = &entry->port_src;
-		port_max_cnt = hw->max_ports;
-		break;
-	default:
-		return -EOPNOTSUPP;
-	}
+	if (sscanf(rule, "0x%hX", value) == 1)
+		;
+	else if (sscanf(rule, "%hu", value) == 1)
+		;
+	else
+		return NULL;
 
-	if (0 == *str) {
-		return -EINVAL;
-	}
+	while (isgraph(*rule))
+		rule++;
+	return rule;
+}
 
-	for (;;) {
-		noi = sscanf(str, "%d%n", &port_num, &read);
-		if (1 == noi) {
-			if (port_num >= 0 && port_num < hw->max_ports && port_max_cnt--) {
-				*port_p |= (1 << port_num);
-				rc = 0;
-			} else {
-				rc = -EINVAL;
-				break;
-			}
-		} else {
+/**
+ * @brief Parse the bit tuple and store result in as bitmask in `mask`.
+ *
+ * @param rule - value to be parsed.
+ * @param mask - stored result.
+ * @return char* - string after value or NULL on error.
+ * @note single quote tolerant.
+ */
+static const char *acl_parse_bitmask(const char *rule, u32 *mask)
+{
+	u32 value;
+
+	*mask = 0;
+	while (1) {
+		while (isblank(*rule) || *rule == '\'')
+			rule++;
+		if (*rule == '\0')
 			break;
-		}
-		str += read;
+
+		if (sscanf(rule, "%u", &value) == 0)
+			break;
+
+		// shift boundary check
+		if (value > (8 * sizeof(value) - 1))
+			return NULL;
+
+		*mask |= (1 << value);
+
+		while (isgraph(*rule))
+			rule++;
 	}
-	return rc;
-}
-
-/**
- * @brief Parse ethernet header field SVID/ethertype
- *
- * @param hw - platform dependent ACL control structure
- * @param str - numbers string
- * @param entry - the ACL entry
- * @param key_id - parsed key
- * @return int - error from errno.h, 0 on success
- */
-static int ubnt_acl_rule_eth_field_parse(struct acl_hw *hw, const char *str, acl_entry_t *entry,
-				     int key_id)
-{
-	#define FMT_VID 		"%hu%*c"
-	#define FMT_ETHER_TYPE 	"0x%hx%*c"
-	uint16_t *field_p;
-
-	switch (key_id) {
-	case ACL_KEY_SVID:
-		field_p = &entry->svid;
-		break;
-	case ACL_KEY_ETHER_TYPE:
-		field_p = &entry->ether_type;
-		break;
-	default:
-		return -EOPNOTSUPP;
-	}
-
-	if (0 == *str) {
-		return -EINVAL;
-	}
-
-	return (sscanf(str, ((key_id == ACL_KEY_ETHER_TYPE) ? FMT_ETHER_TYPE : FMT_VID ), field_p) == 1) ? 0 : -EINVAL;
+	if (*mask == 0)
+		return NULL; // no successful conversions
+	return rule;
 }
 
 /**
  * @brief Parse ACL rule
  *
  * @param hw - platform dependent ACL control structure
- * @param str - port's numbers string
- * @param entry - the ACL entry
+ * @param rule - ACL rule
  * @param rule_type - type of ACL rule
  * @return int - error from errno.h, 0 on success
  */
-int ubnt_acl_rule_process(struct acl_hw *hw, const char *str, acl_entry_type_t rule_type)
+int ubnt_acl_rule_process(struct acl_hw *hw, const char *rule, acl_entry_type_t rule_type)
 {
-	int rc = 0, op = ACL_OP_CMD, cmd;
-	char buf[1024], *p, *r;
-	size_t buf_s = sizeof(buf);
+	int cmd, i;
+	const char *ptr;
 	acl_entry_t entry_out;
-	char delim = ' ';
 	char key_hit[ACL_KEY_CNT] = { 0 };
+
+	if (NULL == hw)
+		return -EINVAL;
+
+	memset(&entry_out, 0, sizeof(entry_out));
+	entry_out.type = rule_type;
 
 	/**
 	 * Format :
-	 * op <key> '<value>'
+	 * cmd <key> '<value>'
+	 * cmd <key>  <value>
 	 * ACL_RULE_PORT_REDIRECTION
 	 *		"add mac_src '*' mac_dst '*' ports_src '1 2 3 4' port_dst '0'"
 	 *		"add mac_src '6A:FC:9E:83:40:68' mac_dst '*' ports_src '0 2' port_dst '1'"
@@ -447,132 +428,121 @@ int ubnt_acl_rule_process(struct acl_hw *hw, const char *str, acl_entry_type_t r
 	 * ACL_RULE_VLAN_ASSIGNMENT
 	 * 		"add svid '4094' ether_type '0x88cc'"
 	 *		"del svid '4094'"
+	 * ACL_RULE_ETHVLAN
+	 *		"add ports_src '0' port_dst '1' vlan_dst '1' vlan_src '4091' force_vtu '1'"
+	 *		"add ports_src '1' port_dst '0' vlan_dst '4091' ether_type '0x88CC'"
+	 *		"del ports_src '0' port_dst '1'"
 	 */
 	enum { ACL_RULE_CMD_ADD = 0, ACL_RULE_CMD_DEL, ACL_RULE_CMD_UNKNOWN };
 
-	int (*parse_val)(struct acl_hw * hw, const char *str, acl_entry_t *entry_out, int key_id) =
-		NULL;
-	int parse_type;
+	while (isblank(*rule))
+		rule++;
 
-	if (NULL == hw) {
+	// check CMD type (Add, del...)
+	if (!memcmp(rule, acl_keywords[ACL_KEY_CMD_ADD],
+		    strlen(acl_keywords[ACL_KEY_CMD_ADD]))) {
+		// Add rule
+		rule += strlen(acl_keywords[ACL_KEY_CMD_ADD]);
+		cmd = ACL_RULE_CMD_ADD;
+	} else if (!memcmp(rule, acl_keywords[ACL_KEY_CMD_DEL],
+			   strlen(acl_keywords[ACL_KEY_CMD_DEL]))) {
+		// Del rule
+		rule += strlen(acl_keywords[ACL_KEY_CMD_DEL]);
+		cmd = ACL_RULE_CMD_DEL;
+	} else {
+		pr_err("[ACL] unknown cmd: '%s'\n", rule);
 		return -EINVAL;
 	}
 
-	strlcpy(buf, str, buf_s);
-
-	if (0 == *buf) {
-		return -EINVAL;
-	}
-
-	memset(&entry_out, 0, sizeof(entry_out));
-	entry_out.type = rule_type;
-
-	p = buf;
-	cmd = ACL_RULE_CMD_UNKNOWN;
-
-	while (p && *p) {
-		if ((r = strchr(p, delim))) {
-			*r++ = '\0';
-		}
-
-		if (strlen(p) > 0) {
-			switch (op) {
-			case ACL_OP_CMD:
-				/* Operation */
-				if (!strcmp(p, acl_keywords[ACL_KEY_CMD_ADD])) {
-					/** Add rule */
-					cmd = ACL_RULE_CMD_ADD;
-				} else if (!strcmp(p, acl_keywords[ACL_KEY_CMD_DEL])) {
-					/** Del rule */
-					cmd = ACL_RULE_CMD_DEL;
-				} else {
-					return -EINVAL;
-				}
-				op = ACL_OP_KEY;
-				break;
-
-			case ACL_OP_KEY:
-				if (ACL_RULE_PORT_REDIRECTION == rule_type) {
-					if (!strcmp(p, acl_keywords[ACL_KEY_MAC_DST])) {
-						parse_val = ubnt_acl_rule_mac_parse;
-						parse_type = ACL_KEY_MAC_DST;
-					} else if (!strcmp(p, acl_keywords[ACL_KEY_MAC_SRC])) {
-						parse_val = ubnt_acl_rule_mac_parse;
-						parse_type = ACL_KEY_MAC_SRC;
-					} else if (!strcmp(p, acl_keywords[ACL_KEY_PORT_DST])) {
-						parse_val = ubnt_acl_rule_ports_parse;
-						parse_type = ACL_KEY_PORT_DST;
-					} else if (!strcmp(p, acl_keywords[ACL_KEY_PORTS_SRC])) {
-						parse_val = ubnt_acl_rule_ports_parse;
-						parse_type = ACL_KEY_PORTS_SRC;
-					} else {
-						return -EINVAL;
-					}
-				} else if (ACL_RULE_VLAN_ASSIGNMENT == rule_type) {
-					if (!strcmp(p, acl_keywords[ACL_KEY_SVID])) {
-						parse_val = ubnt_acl_rule_eth_field_parse;
-						parse_type = ACL_KEY_SVID;
-					} else if (!strcmp(p, acl_keywords[ACL_KEY_ETHER_TYPE])) {
-						parse_val = ubnt_acl_rule_eth_field_parse;
-						parse_type = ACL_KEY_ETHER_TYPE;
-					} else {
-						return -EINVAL;
-					}
-				} else {
-					return -EOPNOTSUPP;
-				}
-				op = ACL_OP_VAL;
-				/* Strip off previous delim to get to start of value */
-				while (*r == delim) {
-					r++;
-				}
-				delim = '\'';
-				break;
-
-			case ACL_OP_VAL:
-				if (parse_val(hw, p, &entry_out, parse_type)) {
-					return -EINVAL;
-				}
-
-				key_hit[parse_type] = 1;
-				op = ACL_OP_KEY;
-				delim = ' ';
+	while (isblank(*rule))
+		rule++;
+	while (*rule) {
+		// check on 0
+		for (i = ACL_KEY_MAC_SRC; i < ACL_KEY_CNT; i++) {
+			if (!memcmp(rule, acl_keywords[i], strlen(acl_keywords[i]))) {
+				rule += strlen(acl_keywords[i]);
 				break;
 			}
 		}
-		p = r;
-	}
-	/* Presence validation */
-	if (ACL_OP_KEY == op) {
-		switch (rule_type) {
-		case ACL_RULE_PORT_REDIRECTION:
-			if (!key_hit[ACL_KEY_MAC_SRC] || !key_hit[ACL_KEY_MAC_DST] ||
-			    !key_hit[ACL_KEY_PORT_DST] || !key_hit[ACL_KEY_PORTS_SRC]) {
-				return -EINVAL;
-			}
+
+		switch (i) {
+		case ACL_KEY_MAC_SRC:
+			ptr = acl_parse_mac(rule, &entry_out.mac_sa.uc[0]);
 			break;
-		case ACL_RULE_VLAN_ASSIGNMENT:
-			if (!key_hit[ACL_KEY_ETHER_TYPE] ||
-			    (ACL_RULE_CMD_ADD == cmd && !key_hit[ACL_KEY_SVID])) {
-				return -EINVAL;
-			}
+		case ACL_KEY_MAC_DST:
+			ptr = acl_parse_mac(rule, &entry_out.mac_da.uc[0]);
 			break;
+		case ACL_KEY_PORT_DST:
+			ptr = acl_parse_bitmask(rule, &entry_out.port_dst);
+			break;
+		case ACL_KEY_PORTS_SRC:
+			ptr = acl_parse_bitmask(rule, &entry_out.port_src);
+			break;
+		case ACL_KEY_SVID:
+			ptr = acl_parse_value(rule, &entry_out.svid);
+			break;
+		case ACL_KEY_ETHER_TYPE:
+			ptr = acl_parse_value(rule, &entry_out.ether_type);
+			break;
+		case ACL_KEY_VLAN_SRC:
+			ptr = acl_parse_value(rule, &entry_out.vlan_src);
+			break;
+		case ACL_KEY_VLAN_DST:
+			ptr = acl_parse_value(rule, &entry_out.vlan_dst);
+			break;
+		case ACL_KEY_FORCE_VTU:
+			ptr = acl_parse_value(rule, &entry_out.force_vtu);
+			break;
+		case ACL_KEY_CNT:
 		default:
-			break;
+			pr_err("[ACL] unknown rule: '%s'\n", rule);
+			return -EINVAL;
 		}
-	} else {
+		if (ptr == NULL) {
+			pr_err("[ACL] Failed to parse val: '%s'\n", rule);
+			return -EINVAL;
+		}
+		key_hit[i] = 1;
+		rule = ptr;
+		// next parameter
+		while (isblank(*rule))
+			rule++;
+	}
+
+	/* Presence validation */
+	switch (rule_type) {
+	case ACL_RULE_PORT_REDIRECTION:
+		if (!key_hit[ACL_KEY_MAC_SRC] || !key_hit[ACL_KEY_MAC_DST] ||
+		    !key_hit[ACL_KEY_PORT_DST] || !key_hit[ACL_KEY_PORTS_SRC]) {
+			return -EINVAL;
+		}
+		break;
+	case ACL_RULE_VLAN_ASSIGNMENT:
+		if (!key_hit[ACL_KEY_ETHER_TYPE] ||
+		    (ACL_RULE_CMD_ADD == cmd && !key_hit[ACL_KEY_SVID])) {
+			return -EINVAL;
+		}
+		break;
+	case ACL_RULE_ETHVLAN:
+		if (!key_hit[ACL_KEY_PORT_DST] ||
+		    !key_hit[ACL_KEY_PORTS_SRC]) {
+			return -EINVAL;
+		}
+		break;
+	default:
+		pr_err("[ACL] unknown rule type: '%d'\n", rule_type);
 		return -EINVAL;
 	}
 
-	if (ACL_RULE_CMD_ADD == cmd) {
-		rc = ubnt_acl_rule_add(hw, &entry_out);
-	} else if (ACL_RULE_CMD_DEL == cmd) {
-		rc = ubnt_acl_rule_del(hw, &entry_out);
-	} else {
-		rc = -EOPNOTSUPP;
+	switch (cmd) {
+	case (ACL_RULE_CMD_ADD):
+		return ubnt_acl_rule_add(hw, &entry_out);
+	case (ACL_RULE_CMD_DEL):
+		return ubnt_acl_rule_del(hw, &entry_out);
+	default:
+		BUG(); // cmd check is above
 	}
-
-	return rc;
+	return 0;
 }
 
 /**
@@ -655,12 +625,40 @@ int ubnt_acl_get_acl_table(struct acl_hw *hw)
 					}
 					break;
 				case ACL_RULE_VLAN_ASSIGNMENT:
-					BUF_APPEND_PRINTF("ETHER_TYPE: 0x04%X\n", entry->ether_type);
+					BUF_APPEND_PRINTF("ETHER_TYPE: 0x%04X\n", entry->ether_type);
 					BUF_APPEND_PRINTF("SVID: %d\n", entry->svid);
 					break;
+				case ACL_RULE_ETHVLAN:
+					BUF_APPEND_PRINTF("PORTS_SRC: ");
+					for (i = 0; i < hw->max_ports; ++i) {
+						if (!(entry->port_src & (1 << i))) {
+							continue;
+						}
+						BUF_APPEND_PRINTF("%d ", i);
+					}
+					BUF_APPEND_PRINTF("\nPORT_DST: ");
+					for (i = 0; i < hw->max_ports; ++i) {
+						if (!(entry->port_dst & (1 << i))) {
+							continue;
+						}
+						BUF_APPEND_PRINTF("%d ", i);
+					}
+					BUF_APPEND_PRINTF("\n");
+					if (entry->ether_type) {
+						BUF_APPEND_PRINTF("ETHER_TYPE: 0x%04X\n", entry->ether_type);
+					}
+					if (entry->vlan_dst) {
+						BUF_APPEND_PRINTF("VLAN_DST: %d\n", entry->vlan_dst);
+					}
+					if (entry->vlan_src) {
+						BUF_APPEND_PRINTF("VLAN_SRC: %d\n", entry->vlan_src);
+					}
+					if (entry->force_vtu) {
+						BUF_APPEND_PRINTF("FORCE_VTU\n");
+					}
+					break;
 				default:
-					BUF_APPEND_PRINTF("UNKNOWN TYPE: 0x%X\n", entry->ether_type);
-
+					BUF_APPEND_PRINTF("UNKNOWN TYPE: 0x%X\n", entry->type);
 					break;
 			}
 			BUF_APPEND_PRINTF("\nSTATE: %s\n\n", acl_state_str[entry->state]);
