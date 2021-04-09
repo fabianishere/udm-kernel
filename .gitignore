@@ -106,3 +106,6 @@ all.config
 
 # Kdevelop4
 *.kdev4
+
+# Do not ignore github directory
+!.github

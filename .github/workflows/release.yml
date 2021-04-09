@@ -1,0 +1,62 @@
+name: Kernel Release
+
+on:
+  push:
+    tags:
+      - v*
+      - flavor/*/v*
+
+jobs:
+   build:
+    name: Build Kernel
+    runs-on: [self-hosted]
+    steps:
+    - name: Clean Workspace
+      run: rm -f *.deb
+    - name: Checkout Sources
+      uses: actions/checkout@v2
+      with:
+        path: udm-kernel
+    - name: Build Kernel
+      run: |
+        cd udm-kernel
+        cp .github/udm-edge.config .config
+        make oldconfig
+        make -j$(nproc)
+        make deb-pkg
+      env:
+        ARCH: arm64
+        CROSS_COMPILE: aarch64-linux-gnu-
+        DEBEMAIL: mail.fabianm@gmail.com
+        DEBFULLNAME: Fabian Mastenbroek
+        LOCALVERSION:
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v2-preview
+      with:
+        name: debs
+        path: "*.deb"
+   publish:
+    name: Publish
+    runs-on: [self-hosted]
+    needs: build
+    steps:
+    - name: Download Artifacts
+      uses: actions/download-artifact@v2
+      with:
+        path: artifacts
+    - name: Format Release Name
+      id: format_release
+      run: |
+        ref="${{ github.ref}}"
+        release_name=${ref#"refs/tags/"}
+        echo "::set-output name=release::$release_name"
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        name: ${{ steps.format_release.outputs.release }}
+        body: |
+          This is the release for udm-kernel ${{ steps.format_release.outputs.release }}.
+        files: artifacts/debs/*.deb
+
