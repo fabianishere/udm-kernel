@@ -133,3 +133,6 @@ all.config
 # Kdevelop4
 *.kdev4
 uImage
+
+# Do not ignore github directory
+!.github
