@@ -594,16 +594,16 @@ static struct ar8327_platform_data default_ar8327_data = {
 
 #define DEBUG_PORT_REGS(X) \
 	X(AR8327_REG_PORT_STATUS) \
-	
+
 static char * dump_helper_print_bits (uint32_t val, char *buf_out){
 	int i = 0;
 	uint32_t sz = sizeof(val)*8;
 	uint32_t lp = 1 << (sz - 1);
 	buf_out[0] = '\0';
 	char *p = &buf_out[0];
-	
+
 	for(i = 0; i < sz; ++i) {
-		
+
 		if( ! (i % 4) ){
 			*p++ = ' ';
 		}
@@ -612,15 +612,15 @@ static char * dump_helper_print_bits (uint32_t val, char *buf_out){
 		p++;
 	}
 	*p = '\0';
-	
+
 	return buf_out;
 }
 static void dump_regs(struct ar8xxx_priv *priv){
-	
+
 	char buf[256];
 	uint32_t val = 0;
-	
-	#define X(reg) val=ar8xxx_read(priv, reg); printk( #reg "\t:\t0x%0X\t%s\n", val, dump_helper_print_bits(val, buf) ); 
+
+	#define X(reg) val=ar8xxx_read(priv, reg); printk( #reg "\t:\t0x%0X\t%s\n", val, dump_helper_print_bits(val, buf) );
 		DEBUG_REGS(X)
 	#undef X
 }
@@ -636,7 +636,7 @@ ar8327_hw_config_pdata(struct ar8xxx_priv *priv,
 	u32 t;
 
 	/*
-	if (!pdata) 
+	if (!pdata)
 		return -EINVAL;
 	*/
 
@@ -644,7 +644,7 @@ ar8327_hw_config_pdata(struct ar8xxx_priv *priv,
 	if (!pdata) {
 		pdata = &default_ar8327_data;
 	}
-	
+
 	priv->get_port_link = pdata->get_port_link;
 
 	data->port0_status = ar8327_get_port_init_status(&pdata->port0_cfg);
@@ -1849,6 +1849,11 @@ static int ar8327_acl_rule_hw_to_sw(struct acl_hw *hw, void *data_in,
 			FIELD_GET(AR8327_MAC_RUL_V1, DAV_BYTE0, entry->mac_da.uc[0]);
 			FIELD_GET(AR8327_MAC_RUL_V1, DAV_BYTE1, entry->mac_da.uc[1]);
 
+			entry->vlan_dst = (entry_hw->part.act[0] >> 16);
+			entry->vlan_src = (0xFFFF & entry_hw->part.vlu[3]);
+			entry->ether_type = (entry_hw->part.vlu[3] >> 16);
+			entry->force_vtu = !!(entry_hw->part.act[1] & (1 << (45 - 32)));
+
 			FIELD_GET(AR8327_MAC_RUL_V4, SRC_PT, entry->port_src);
 		} else {
 			goto not_supp;
@@ -1882,12 +1887,15 @@ static int ar8327_acl_rule_sw_to_hw(struct acl_hw *hw, acl_entry_t *entry,
 	 * NOTE : In our case there is harcoded action for ACL_RULE_PORT_REDIRECTION type which is
 	 * redirect incoming frame from port_src with SA to port_dst.
 	 */
-	if (entry->type == ACL_RULE_PORT_REDIRECTION) {
+	if (entry->type == ACL_RULE_PORT_REDIRECTION ||
+	    entry->type == ACL_RULE_ETHVLAN) {
 		/**
 		 * SET ACTION
 		 */
-		FIELD_SET(AR8327_ACL_RSLT2, DES_PORT_EN, 1);
-
+		 // Force dst port
+		if (entry->port_dst) {
+			FIELD_SET(AR8327_ACL_RSLT2, DES_PORT_EN, 1);
+		}
 		des_pts = (entry->port_dst >> 3) & 0xf;
 		FIELD_SET(AR8327_ACL_RSLT2, DES_PORT1, des_pts);
 
@@ -1929,6 +1937,26 @@ static int ar8327_acl_rule_sw_to_hw(struct acl_hw *hw, acl_entry_t *entry,
 			FIELD_SET(AR8327_MAC_RUL_M0, DAM_BYTE5, 0xff);
 			FIELD_SET(AR8327_MAC_RUL_M1, DAM_BYTE0, 0xff);
 			FIELD_SET(AR8327_MAC_RUL_M1, DAM_BYTE1, 0xff);
+		}
+
+		// lookup vid
+		entry_hw->part.act[1] |= (entry->force_vtu << (45 - 32));
+		// Set VLAN rule to be MASK, nor RANGE, always
+		entry_hw->part.msk[4] |= (1 << 3);
+
+		if (entry->vlan_dst) {
+			entry_hw->part.act[0] |= (entry->vlan_dst << 16);
+			entry_hw->part.act[1] |= (1 << (44 - 32)); // ctag swap
+		}
+
+		if (entry->vlan_src) {
+			entry_hw->part.msk[3] |= 0x0000FFFF;
+			entry_hw->part.vlu[3] |= entry->vlan_src;
+		}
+
+		if (entry->ether_type) {
+			entry_hw->part.msk[3] |= 0xFFFF0000;
+			entry_hw->part.vlu[3] |= (entry->ether_type << 16);
 		}
 
 		/**
@@ -2064,6 +2092,16 @@ static int ar8327_sw_set_acl_redirect(struct switch_dev *dev, const struct switc
 {
 	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
 	return ubnt_acl_rule_process(&priv->hw_acl, val->value.s, ACL_RULE_PORT_REDIRECTION);
+}
+
+/**
+ * @brief Add VLAN to port or ethertype to VLAN/port ACL redirect rule.
+ */
+static int ar8327_sw_set_ethvlan(struct switch_dev *dev, const struct switch_attr *attr,
+					   struct switch_val *val)
+{
+	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
+	return ubnt_acl_rule_process(&priv->hw_acl, val->value.s, ACL_RULE_ETHVLAN);
 }
 
 /**
@@ -2253,6 +2291,13 @@ static const struct switch_attr ar8327_sw_attr_globals[] = {
 		.name = "acl_redirect",
 		.description = "Add MAC redirection rule to ACL",
 		.set = ar8327_sw_set_acl_redirect,
+		.get = NULL,
+	},
+	{
+		.type = SWITCH_TYPE_STRING,
+		.name = "ethvlan",
+		.description = "Add ethvlan redirection to ACL",
+		.set = ar8327_sw_set_ethvlan,
 		.get = NULL,
 	},
 	{

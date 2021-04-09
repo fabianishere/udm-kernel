@@ -43,6 +43,7 @@ typedef enum {
 typedef enum {
 	ACL_RULE_PORT_REDIRECTION = 0,
 	ACL_RULE_VLAN_ASSIGNMENT,
+	ACL_RULE_ETHVLAN,
 } acl_entry_type_t;
 
 typedef struct {
@@ -63,6 +64,11 @@ typedef struct {
 	/* vlan assignment */
 	uint16_t svid;
 	uint16_t ether_type;
+
+	/* extra for ethvlan redirection */
+	uint16_t force_vtu;
+	uint16_t vlan_dst;
+	uint16_t vlan_src;
 
 	int idx;
 
@@ -215,4 +221,9 @@ int ubnt_acl_enable_set(struct acl_hw *hw, int enable);
  */
 int ubnt_mac_zero_addr(acl_mac_t *mac);
 
+// same as std::isblank()
+static inline int isblank(int c)
+{
+	return (c == ' ' || c == '\t') ? 1 : 0;
+}
 #endif /* _UBNT_ACL_H_ */
