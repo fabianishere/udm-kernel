@@ -21,6 +21,7 @@ jobs:
       run: |
         cd udm-kernel
         cp .github/udm-edge.config .config
+        quilt --quiltrc /dev/null --color=always push -a
         make oldconfig
         make -j$(nproc)
         make deb-pkg
