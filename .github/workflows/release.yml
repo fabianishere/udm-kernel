@@ -20,7 +20,7 @@ jobs:
     - name: Build Kernel
       run: |
         cd udm-kernel
-        cp .github/udm-edge.config .config
+        scripts/kconfig/merge_config.sh -m .github/config/config.stock.udm .github/config/config.edge.udm
         quilt --quiltrc /dev/null --color=always push -a
         make oldconfig
         make -j$(nproc)
