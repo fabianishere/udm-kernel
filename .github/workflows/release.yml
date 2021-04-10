@@ -59,5 +59,7 @@ jobs:
         name: ${{ steps.format_release.outputs.release }}
         body: |
           This is the release for udm-kernel ${{ steps.format_release.outputs.release }}.
-        files: artifacts/debs/*.deb
+        files: |
+          artifacts/debs/udm-kernel-*.deb
+          artifacts/debs/udm-headers-*.deb
 
