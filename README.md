@@ -7,6 +7,7 @@ For the edge flavour, we extend the stock Linux kernel running on the UniFi
 Dream Machine (Pro) with the following features:
 
 1. Multicast routing
+2. Multipath routing
 
 ## Installation
 SSH into your UniFi Dream Machine and enter the UniFi OS shell as follows:
