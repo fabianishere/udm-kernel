@@ -42,6 +42,10 @@
 *.tab.[ch]
 *.tar
 *.xz
+*.lz4
+*.lzo
+*.gcno
+modules.builtin
 Module.symvers
 modules.builtin
 
@@ -96,10 +100,6 @@ arch/*/include/generated
 
 # stgit generated dirs
 patches-*
-
-# quilt's files
-patches
-series
 
 # cscope files
 cscope.*

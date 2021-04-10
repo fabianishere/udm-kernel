@@ -8,6 +8,7 @@ Dream Machine (Pro) with the following features:
 
 1. Multicast routing
 2. Multipath routing
+3. In-kernel [WireGuard](https://wireguard.com) VPN support
 
 ## Installation
 SSH into your UniFi Dream Machine and enter the UniFi OS shell as follows:
