@@ -21,7 +21,6 @@ jobs:
       run: |
         cd udm-kernel
         scripts/kconfig/merge_config.sh -m .github/config/config.stock.udm .github/config/config.edge.udm
-        quilt --quiltrc /dev/null --color=always push -a
         make oldconfig
         make -j$(nproc)
         make deb-pkg
