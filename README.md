@@ -78,6 +78,7 @@ cd udm-kernel
 #### Building
 First, prepare the configuration for the kernel. Beforehand, you may add the desired
 kernel configuration options to `.github/config/config.local.udm`.
+
 ```bash
 .github/prepare.sh
 ```
@@ -86,6 +87,8 @@ If you wish to graphically configure the kernel options, pass the `-m` flag:
 ```bash
 .github/prepare.sh -m
 ```
+Make sure `CONFIG_MODULE_FORCE_LOAD` is always enabled, in order for the kernel
+to boot properly.
 
 Once the kernel is configured, build the kernel as follows:
 ```bash
