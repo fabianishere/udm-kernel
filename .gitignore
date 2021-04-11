@@ -44,6 +44,7 @@
 *.xz
 *.lz4
 *.lzo
+*.patch
 *.gcno
 modules.builtin
 Module.symvers
@@ -100,6 +101,10 @@ arch/*/include/generated
 
 # stgit generated dirs
 patches-*
+
+# quilt's files
+patches
+series
 
 # cscope files
 cscope.*
