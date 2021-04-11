@@ -19,17 +19,13 @@ jobs:
         path: udm-kernel
     - name: Build Kernel
       run: |
+        release_name=$(echo ${{ github.ref }} | sed -n 's/^.*-\([[:alnum:]]*\).*$/\1/p')
         cd udm-kernel
-        scripts/kconfig/merge_config.sh -m .github/config/config.stock.udm .github/config/config.edge.udm
-        make oldconfig
-        make -j$(nproc)
-        make deb-pkg
+        .github/prepare.sh -V $release_name
+        .github/build.sh
       env:
-        ARCH: arm64
-        CROSS_COMPILE: aarch64-linux-gnu-
         DEBEMAIL: mail.fabianm@gmail.com
         DEBFULLNAME: Fabian Mastenbroek
-        LOCALVERSION:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v2-preview
       with:
