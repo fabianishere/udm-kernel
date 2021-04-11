@@ -21,6 +21,7 @@ In particular, we extend the stock flavour kernel the following features:
 1. Multicast routing
 2. Multipath routing
 3. In-kernel [WireGuard](https://wireguard.com) VPN support
+4. IP-VLAN, VXLAN and MAC-VLAN tap driver support
 
 The edge flavour targets the most common use-cases for running a custom kernel,
 but should not behave differently from the stock kernel in default configuration.
