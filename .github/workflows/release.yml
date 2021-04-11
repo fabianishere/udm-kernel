@@ -36,6 +36,8 @@ jobs:
     runs-on: [self-hosted]
     needs: build
     steps:
+    - name: Clean Workspace
+      run: rm -rf artifacts
     - name: Download Artifacts
       uses: actions/download-artifact@v2
       with:
