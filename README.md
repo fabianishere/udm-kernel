@@ -4,13 +4,29 @@ Custom Linux kernels for the UniFi Dream Machine (Pro) based on the UbiOS stock 
 See [udm-kernel-tools](https://github.com/fabianishere/udm-kernel-tools)
 for instructions on how to run these kernels on your device.
 
-## Features
-For the edge flavour, we extend the stock Linux kernel running on the UniFi 
-Dream Machine (Pro) with the following features:
+## Flavours
+This repository offers several kernel flavours for the UniFi Dream Machine (Pro):
 
+### Stock
+The sources for the stock kernel running on the UDM/P is
+located at the [flavour/stock](https://github.com/fabianishere/udm-kernel/tree/flavour/stock) branch.
+
+We do not offer any pre-built kernels for stock kernels. However, the stock
+kernel provides the base upon which the other kernel flavours build.
+
+### Edge
+The edge flavour is located at the [master](https://github.com/fabianishere/udm-kernel/tree/master) branch
+and extends the stock kernel with more functionality.
+In particular, we extend the stock flavour kernel the following features:
 1. Multicast routing
 2. Multipath routing
 3. In-kernel [WireGuard](https://wireguard.com) VPN support
+
+The edge flavour targets the most common use-cases for running a custom kernel,
+but should not behave differently from the stock kernel in default configuration.
+
+Pre-built kernels are available on the [Releases](https://github.com/fabianishere/udm-kernel/releases) page
+(suffixed with `-edge`).
 
 ## Installation
 SSH into your UniFi Dream Machine and enter the UniFi OS shell as follows:
@@ -26,11 +42,18 @@ you can install the package as follows:
 apt install ./udm-kernel-VERSION-RELEASE_arm64.deb
 ```
 
-Now, to actually use these kernels, please visit [udm-kernel-tools](https://github.com/fabianishere/udm-kernel-tools)
+**Important**  
+To actually use these kernels, please visit [udm-kernel-tools](https://github.com/fabianishere/udm-kernel-tools)
 for instructions.
 
-## Building manually
-You may also choose to manually build one of these kernels yourself.
+## Contributing
+Feel free to open a issue or pull request to this repository if you have
+a question, suggestion or want to add new functionality to the custom kernels.
+
+If you are adding new functionality to the kernel, please motivate your use-case
+and think about how it might be useful for other users as well.
+
+## Build Process
 
 #### Prerequisites
 Make sure you have the following packages installed:
@@ -69,7 +92,3 @@ Once the kernel is configured, build the kernel as follows:
 
 Afterwards, you will find the generated Debian packages in the directory above
 the repository.
-
-## Questions
-If you have any questions or want to have additional features included in the
-kernel, feel free to open an issue on Github.
