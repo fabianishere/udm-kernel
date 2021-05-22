@@ -31,6 +31,10 @@
 #include <linux/debugfs.h>
 #include <asm/sections.h>
 
+#if defined(CONFIG_UBNT_REBOOT_REASON)
+#include <linux/resvmem_reboot.h>
+#endif
+
 #define PANIC_TIMER_STEP 100
 #define PANIC_BLINK_SPD 18
 
@@ -268,6 +272,9 @@ void panic(const char *fmt, ...)
 				i_next = i + 3600 / PANIC_BLINK_SPD;
 			}
 			mdelay(PANIC_TIMER_STEP);
+#if defined(CONFIG_UBNT_REBOOT_REASON)
+		resvmem_set_reboot_reason(RESVMEM_REBOOT_KERNEL_PANIC);
+#endif
 		}
 	}
 	if (panic_timeout != 0) {

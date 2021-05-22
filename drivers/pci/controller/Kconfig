@@ -45,7 +45,6 @@ config PCIE_CADENCE_EP
 	  Say Y here if you want to support the Cadence PCIe  controller in
 	  endpoint mode. This PCIe controller may be embedded into many
 	  different vendors SoCs.
-
 endmenu
 
 config PCIE_XILINX_NWL
@@ -277,6 +276,25 @@ config VMD
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called vmd.
+
+config PCI_INTERNAL_ALPINE
+	bool "Annapurna Labs Alpine internal PCIe controller"
+	depends on ARCH_ALPINE
+	depends on OF
+
+config PCI_EXTERNAL_ALPINE
+	bool "Annapurna Labs Alpine external PCIe controller"
+	depends on ARCH_ALPINE
+	depends on OF
+	select AL_HAL
+
+config PCI_EXTERNAL_ERR_ALPINE
+	bool "Amazon Alpine external PCIe Errors"
+	depends on ARCH_ALPINE
+	depends on OF
+	select AL_HAL
+	help
+	  Enable support for External PCIe errors for ALPINE SOCs.
 
 source "drivers/pci/controller/dwc/Kconfig"
 endmenu

@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0
 # generic gpio support: platform drivers, dedicated expander chips, etc
 
+KBUILD_CFLAGS_KERNEL += -I$(srctree)/drivers/soc/alpine/HAL/include/pbs \
+                        -I$(srctree)/drivers/soc/alpine/HAL/include/common/ \
+						-I$(srctree)/drivers/soc/alpine/ \
+
 ccflags-$(CONFIG_DEBUG_GPIO)	+= -DDEBUG
 
 obj-$(CONFIG_GPIOLIB)		+= devres.o
@@ -159,3 +163,4 @@ obj-$(CONFIG_GPIO_ZEVIO)	+= gpio-zevio.o
 obj-$(CONFIG_GPIO_ZYNQ)		+= gpio-zynq.o
 obj-$(CONFIG_GPIO_ZX)		+= gpio-zx.o
 obj-$(CONFIG_GPIO_LOONGSON1)	+= gpio-loongson1.o
+obj-$(CONFIG_GPIO_AL_SGPO)     += gpio-alpine-sgpo.o

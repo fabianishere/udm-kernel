@@ -346,6 +346,14 @@ config IRQ_UNIPHIER_AIDET
 	help
 	  Support for the UniPhier AIDET (ARM Interrupt Detector).
 
+config ALPINE_IOFIC
+	bool "Alpine Fabric Interrupt Controller"
+	depends on ARCH_ALPINE
+	depends on OF
+	select AL_HAL
+	help
+	  Support the Alpine generic IOFIC
+
 config MESON_IRQ_GPIO
        bool "Meson GPIO Interrupt Multiplexer"
        depends on ARCH_MESON

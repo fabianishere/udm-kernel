@@ -346,6 +346,46 @@ static int mdiobus_create_device(struct mii_bus *bus,
 }
 
 /**
+ * mdiobus_match_name - compares specified string to the device name
+ * @dev: device object to be examined
+ * @data: pointer to string to compare device name to
+ *
+ * Description: matching function used in call to class_find_device() to find
+ * a device with the specified name
+ */
+static int mdiobus_match_name( struct device * dev, const void * data )
+{
+	if (!dev_name(dev)){
+		return 0;
+	}
+
+	return !strncmp(dev_name(dev), (char *)data, strlen((char *)data));
+}
+
+/**
+ * mdiobus_find_by_name - Convenience function for retrieving an mii_bus pointer
+ * by name
+ * @name: name of the bus being searched for
+ */
+struct mii_bus * mdiobus_find_by_name( char * name )
+{
+	struct device * dev = NULL;
+	/*
+	 * Search devices registered for with the mdio_bus_class using the device 
+	 * name as the matching criteria
+	 */
+	dev = class_find_device( &mdio_bus_class, NULL, (void *)name, mdiobus_match_name );
+
+	if(dev) {
+		put_device(dev);
+	}
+
+	/* return the mii_bus pointer or NULL if none was found */
+	return (dev) ? container_of( dev, struct mii_bus, dev ) : NULL;
+}
+EXPORT_SYMBOL( mdiobus_find_by_name );
+
+/**
  * __mdiobus_register - bring up all the PHYs on a given bus and attach them to bus
  * @bus: target mii_bus
  * @owner: module containing bus accessor functions

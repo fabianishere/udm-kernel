@@ -28,6 +28,9 @@
 
 #include <linux/atomic.h>
 
+#define PHY_FAKE_ID_BASE 	(0xa5a55a5a)
+#define PHY_FAKE_ID_RTL8370 (PHY_FAKE_ID_BASE + 1)
+
 #define PHY_DEFAULT_FEATURES	(SUPPORTED_Autoneg | \
 				 SUPPORTED_TP | \
 				 SUPPORTED_MII)
@@ -243,6 +246,7 @@ static inline struct mii_bus *mdiobus_alloc(void)
 }
 
 int __mdiobus_register(struct mii_bus *bus, struct module *owner);
+struct mii_bus * mdiobus_find_by_name( char * name );
 #define mdiobus_register(bus) __mdiobus_register(bus, THIS_MODULE)
 void mdiobus_unregister(struct mii_bus *bus);
 void mdiobus_free(struct mii_bus *bus);
@@ -550,6 +554,12 @@ struct phy_driver {
 	/* Determines the negotiated speed and duplex */
 	int (*read_status)(struct phy_device *phydev);
 
+	/* 
+	 * Update the value in phydev->link to reflect the 
+	 * current link value
+	 */
+	int (*update_link)(struct phy_device *phydev);
+
 	/* Clears any pending interrupts */
 	int (*ack_interrupt)(struct phy_device *phydev);
 
@@ -561,6 +571,12 @@ struct phy_driver {
 	 * For multi-PHY devices with shared PHY interrupt pin
 	 */
 	int (*did_interrupt)(struct phy_device *phydev);
+
+	/*
+	 * Called before an ethernet device is detached
+	 * from the PHY.
+	 */
+	void (*detach)(struct phy_device *phydev);
 
 	/* Clears up any memory if needed */
 	void (*remove)(struct phy_device *phydev);
@@ -1047,6 +1063,7 @@ void phy_ethtool_ksettings_get(struct phy_device *phydev,
 			       struct ethtool_link_ksettings *cmd);
 int phy_ethtool_ksettings_set(struct phy_device *phydev,
 			      const struct ethtool_link_ksettings *cmd);
+int phy_ethtool_ioctl(struct phy_device *phydev, void *useraddr);
 int phy_mii_ioctl(struct phy_device *phydev, struct ifreq *ifr, int cmd);
 int phy_start_interrupts(struct phy_device *phydev);
 void phy_print_status(struct phy_device *phydev);
@@ -1075,6 +1092,8 @@ int phy_ethtool_get_link_ksettings(struct net_device *ndev,
 int phy_ethtool_set_link_ksettings(struct net_device *ndev,
 				   const struct ethtool_link_ksettings *cmd);
 int phy_ethtool_nway_reset(struct net_device *ndev);
+void ubnt_net_notify(void *net, int group, int nlmsgtype,
+			void *data, int size);
 
 #if IS_ENABLED(CONFIG_PHYLIB)
 int __init mdio_bus_init(void);

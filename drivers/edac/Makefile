@@ -77,3 +77,7 @@ obj-$(CONFIG_EDAC_ALTERA)		+= altera_edac.o
 obj-$(CONFIG_EDAC_SYNOPSYS)		+= synopsys_edac.o
 obj-$(CONFIG_EDAC_XGENE)		+= xgene_edac.o
 obj-$(CONFIG_EDAC_TI)			+= ti_edac.o
+include $(srctree)/drivers/soc/alpine/alpine_hal.mk
+obj-$(CONFIG_EDAC_ALPINE_SYSTEM_FABRIC)	+= alpine_system_fabric_edac.o
+obj-$(CONFIG_EDAC_ALPINE_L1)		+= alpine_l1_edac.o
+obj-$(CONFIG_EDAC_ALPINE_L2)		+= alpine_l2_edac.o

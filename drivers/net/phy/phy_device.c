@@ -1143,6 +1143,9 @@ void phy_detach(struct phy_device *phydev)
 	struct module *ndev_owner = dev->dev.parent->driver->owner;
 	struct mii_bus *bus;
 
+	if (phydev->drv && phydev->drv->detach)
+		phydev->drv->detach(phydev);
+
 	if (phydev->sysfs_links) {
 		sysfs_remove_link(&dev->dev.kobj, "phydev");
 		sysfs_remove_link(&phydev->mdio.dev.kobj, "attached_dev");
@@ -1517,15 +1520,8 @@ int genphy_update_link(struct phy_device *phydev)
 {
 	int status;
 
-	/* The link state is latched low so that momentary link
-	 * drops can be detected. Do not double-read the status
-	 * in polling mode to detect such short link drops.
-	 */
-	if (!phy_polling_mode(phydev)) {
-		status = phy_read(phydev, MII_BMSR);
-		if (status < 0)
-			return status;
-	}
+	if (phydev->drv && phydev->drv->update_link)
+		return phydev->drv->update_link(phydev);
 
 	/* Read link and autonegotiation status */
 	status = phy_read(phydev, MII_BMSR);
@@ -2007,8 +2003,10 @@ static struct phy_driver genphy_driver = {
 			  SUPPORTED_AUI | SUPPORTED_FIBRE |
 			  SUPPORTED_BNC,
 	.aneg_done	= genphy_aneg_done,
+#ifndef CONFIG_ARCH_ALPINE
 	.suspend	= genphy_suspend,
 	.resume		= genphy_resume,
+#endif
 	.set_loopback   = genphy_loopback,
 };
 

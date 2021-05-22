@@ -26,6 +26,7 @@ obj-$(CONFIG_BRIDGE_EBT_MARK) += ebt_mark_m.o
 obj-$(CONFIG_BRIDGE_EBT_PKTTYPE) += ebt_pkttype.o
 obj-$(CONFIG_BRIDGE_EBT_STP) += ebt_stp.o
 obj-$(CONFIG_BRIDGE_EBT_VLAN) += ebt_vlan.o
+obj-$(CONFIG_BRIDGE_EBT_SET) += ebt_set.o
 
 # targets
 obj-$(CONFIG_BRIDGE_EBT_ARPREPLY) += ebt_arpreply.o

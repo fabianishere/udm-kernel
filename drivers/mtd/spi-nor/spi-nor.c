@@ -972,6 +972,12 @@ static int macronix_quad_enable(struct spi_nor *nor);
  * old entries may be missing 4K flag.
  */
 static const struct flash_info spi_nor_ids[] = {
+	/* spi_flash_jedec_detection --
+	*   using this configuration means the user is counting on this driver
+	*   to perform memory device detection automatically (using jedec
+	*   probe).
+	*/
+	{ "spi_flash_jedec_detection", INFO(0xD373C7, 0, 0, 0, 0) },
 	/* Atmel -- some are (confusingly) marketed as "DataFlash" */
 	{ "at25fs010",  INFO(0x1f6601, 0, 32 * 1024,   4, SECT_4K) },
 	{ "at25fs040",  INFO(0x1f6604, 0, 64 * 1024,   8, SECT_4K) },
@@ -1081,6 +1087,8 @@ static const struct flash_info spi_nor_ids[] = {
 	{ "mx25l1606e",  INFO(0xc22015, 0, 64 * 1024,  32, SECT_4K) },
 	{ "mx25l3205d",  INFO(0xc22016, 0, 64 * 1024,  64, SECT_4K) },
 	{ "mx25l3255e",  INFO(0xc29e16, 0, 64 * 1024,  64, SECT_4K) },
+	{ "mx25u25635f", INFO(0xc22539, 0, 64 * 1024, 512, SECT_4K) },
+	{ "mx25u12835f", INFO(0xc22538, 0, 64 * 1024, 256, 0) },
 	{ "mx25l6405d",  INFO(0xc22017, 0, 64 * 1024, 128, SECT_4K) },
 	{ "mx25u2033e",  INFO(0xc22532, 0, 64 * 1024,   4, SECT_4K) },
 	{ "mx25u4035",   INFO(0xc22533, 0, 64 * 1024,   8, SECT_4K) },
@@ -1106,6 +1114,7 @@ static const struct flash_info spi_nor_ids[] = {
 	{ "n25q128a13",  INFO(0x20ba18, 0, 64 * 1024,  256, SECT_4K | SPI_NOR_QUAD_READ) },
 	{ "n25q256a",    INFO(0x20ba19, 0, 64 * 1024,  512, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
 	{ "n25q256ax1",  INFO(0x20bb19, 0, 64 * 1024,  512, SECT_4K | SPI_NOR_QUAD_READ) },
+	{ "n25q16a",     INFO(0x20bb19, 0, 64 * 1024, 1024, SECT_4K | USE_FSR | SPI_NOR_QUAD_READ) },
 	{ "n25q512a",    INFO(0x20bb20, 0, 64 * 1024, 1024, SECT_4K | USE_FSR | SPI_NOR_QUAD_READ) },
 	{ "n25q512ax3",  INFO(0x20ba20, 0, 64 * 1024, 1024, SECT_4K | USE_FSR | SPI_NOR_QUAD_READ) },
 	{ "n25q00",      INFO(0x20ba21, 0, 64 * 1024, 2048, SECT_4K | USE_FSR | SPI_NOR_QUAD_READ | NO_CHIP_ERASE) },
@@ -2797,6 +2806,23 @@ void spi_nor_restore(struct spi_nor *nor)
 }
 EXPORT_SYMBOL_GPL(spi_nor_restore);
 
+/**
+ * spi_nor_read_fact_prot_reg
+ * Read factory OTP area.
+ */
+
+static int spi_nor_read_fact_prot_reg(struct mtd_info *mtd, loff_t from,
+            size_t len, size_t *retlen, u_char *buf)
+{
+	struct spi_nor *nor = mtd_to_spi_nor(mtd);
+	int err;
+
+	err = spi_nor_read_sfdp(nor, from, len, buf);
+	*retlen = err ? 0: len;
+
+    return 0;
+}
+
 int spi_nor_scan(struct spi_nor *nor, const char *name,
 		 const struct spi_nor_hwcaps *hwcaps)
 {
@@ -2871,9 +2897,11 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
 	mtd->writesize = 1;
 	mtd->flags = MTD_CAP_NORFLASH;
 	mtd->size = params.size;
+	mtd->jedec_id = (info->id[0] << 16) | (info->id[1] << 8) | (info->id[2]);
 	mtd->_erase = spi_nor_erase;
 	mtd->_read = spi_nor_read;
 	mtd->_resume = spi_nor_resume;
+	mtd->_read_fact_prot_reg = spi_nor_read_fact_prot_reg;
 
 	/* NOR protection support for STmicro/Micron chips and similar */
 	if (JEDEC_MFR(info) == SNOR_MFR_MICRON ||

@@ -49,7 +49,7 @@ static void edac_device_dump_device(struct edac_device_ctl_info *edac_dev)
 
 struct edac_device_ctl_info *edac_device_alloc_ctl_info(
 	unsigned sz_private,
-	char *edac_device_name, unsigned nr_instances,
+	const char *edac_device_name, unsigned nr_instances,
 	char *edac_block_name, unsigned nr_blocks,
 	unsigned offset_value,		/* zero, 1, or other based offset */
 	struct edac_dev_sysfs_block_attribute *attrib_spec, unsigned nr_attrib,

@@ -2622,6 +2622,19 @@ sd_read_write_protect_flag(struct scsi_disk *sdkp, unsigned char *buffer)
 	int res;
 	struct scsi_device *sdp = sdkp->device;
 	struct scsi_mode_data data;
+	/*
+	 * NOTE:
+	 * Disks are read-only on UDM by default, only a few partitions are set as
+	 * read-write. A reapplying of read-only policy on every `.revalidate_disk`
+	 * by `set_disk_ro` after `ubnt-hal` sets its own policy is unwanted as
+	 * `ubnt-hal` enforces only the read-only flag and `set_disk_ro` applies the
+	 * policy flag to the whole disk including all its partitions. That means
+	 * every partition with read-write flag set by `ubnt-hal` is going to be
+	 * overridden with read-only flag by `set_disk_ro` in this function.
+	 *
+	 * More info in PR: https://github.com/ubiquiti/ubios-kernel/pull/24
+	 */
+	int disk_ro = 0; /* UBNT change, originally `get_disk_ro(sdkp->disk);` */
 	int old_wp = sdkp->write_prot;
 
 	set_disk_ro(sdkp->disk, 0);

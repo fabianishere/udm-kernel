@@ -174,6 +174,7 @@ struct uart_port {
 #if defined(CONFIG_SERIAL_CORE_CONSOLE) || defined(SUPPORT_SYSRQ)
 	unsigned long		sysrq;			/* sysrq timeout */
 	unsigned int		sysrq_ch;		/* char for sysrq */
+	unsigned int		sysrq_pw_window[4];	/* sysrq password window */
 #endif
 
 	/* flags must be updated while holding port mutex */
@@ -475,7 +476,20 @@ uart_handle_sysrq_char(struct uart_port *port, unsigned int ch)
 {
 	if (port->sysrq) {
 		if (ch && time_before(jiffies, port->sysrq)) {
-			handle_sysrq(ch);
+			// BREAK u BREAK b BREAK n BREAK t
+			if (port->sysrq_pw_window[0] == 'u' &&
+			    port->sysrq_pw_window[1] == 'b'  &&
+			    port->sysrq_pw_window[2] == 'n' &&
+			    port->sysrq_pw_window[3] == 't') {
+				handle_sysrq(ch);
+			} else {
+				unsigned int i;
+
+				for (i = 0; i < 3; i++)
+					port->sysrq_pw_window[i] = port->sysrq_pw_window[i+1];
+
+				port->sysrq_pw_window[3] = ch;
+			}
 			port->sysrq = 0;
 			return 1;
 		}

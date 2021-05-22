@@ -1,0 +1,38 @@
+Annapurna labs alpine V3 thermal sensor management
+
+The alpine V3 contains thermal sensors
+
+Required properties :
+- compatible : "annapurna-labs,al-thermal-v3".
+- reg : Should contain 1 entry:
+- slave_addr : Must contain 1 entry with sbus slave value
+- #thermal-sensor-cells : Should be 1. See ./thermal.txt for a description
+    of this property.
+
+
+Example :
+
+	thermal: thermal {
+		compatible = "annapurna-labs,al-thermal-v3";
+		reg = <0x0 0xfd9c1000 0x0 0x00001000>;
+		slave_addr = <6>;
+		#thermal-sensor-cells = <1>;
+	};
+
+Example: referring to thermal sensors :
+
+	thermal-zones {
+		cpu_thermal: cpu-thermal {
+			polling-delay-passive = <250>; /* milliseconds */
+			polling-delay = <1000>; /* milliseconds */
+
+			thermal-sensors = <&thermal 0>;
+
+			trips {
+				cpu_crit: cpu-crit {
+					temperature = <105000>; /* millicelsius */
+					hysteresis = <2000>; /* millicelsius */
+					type = "critical";
+				};
+			};
+		};

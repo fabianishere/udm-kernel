@@ -129,4 +129,8 @@ br_fdb_find_port(const struct net_device *br_dev,
 }
 #endif
 
+struct net_bridge_port;
+typedef int br_handle_entry_hook_t(struct net_bridge_port *p, void *fdb, int oper, void *context);
+extern br_handle_entry_hook_t *br_handle_entry_hook;
+
 #endif

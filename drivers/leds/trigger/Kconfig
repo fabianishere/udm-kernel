@@ -129,4 +129,11 @@ config LEDS_TRIGGER_NETDEV
 	  This allows LEDs to be controlled by network device activity.
 	  If unsure, say Y.
 
+config LEDS_TRIGGER_EXTERNAL
+	tristate "LED External Trigger"
+	depends on LEDS_TRIGGERS
+	help
+	  This allows LEDs to be controlled by external trigger.
+	  If unsure, say Y.
+
 endif # LEDS_TRIGGERS

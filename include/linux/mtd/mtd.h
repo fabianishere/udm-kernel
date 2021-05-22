@@ -278,6 +278,9 @@ struct mtd_info {
 	int numeraseregions;
 	struct mtd_erase_region_info *eraseregions;
 
+	/* JEDEC ID */
+	uint32_t jedec_id;
+
 	/*
 	 * Do not call via these pointers, use corresponding mtd_*()
 	 * wrappers instead.
@@ -598,4 +601,6 @@ static inline int mtd_is_bitflip_or_eccerr(int err) {
 
 unsigned mtd_mmap_capabilities(struct mtd_info *mtd);
 
+typedef void (*mtd_callback)(struct mtd_info* mtd, void * priv);
+void mtd_callback_for_each(mtd_callback cb, void *priv);
 #endif /* __MTD_MTD_H__ */

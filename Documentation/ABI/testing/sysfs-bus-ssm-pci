@@ -1,0 +1,227 @@
+What:		/sys/bus/pci/drivers/al-ssm-pcie/.../panic_on_ue
+Date:		April 2019
+Contact:	hhhawa@amazon.com
+Description:
+		Writing 1 to this file will cause the driver to panic
+		on SSM uncorrectable error. Writing 0 to this file will
+		cause the driver not to panic on SSM uncorrectable error
+		(this the default mode).
+
+What:		/sys/bus/pci/drivers/al-ssm-pcie/.../udma/...
+Date:		April 2019
+Contact:	hhhawa@amazon.com
+Description:
+		UDMA folder includes multiple entries, every entry points to a specific
+		error in SSM UDMA engine.
+		Reading this attribute will provide the counter of times the error
+		had been occur.
+		Writing zero to the file will reset the counter.
+		Here is the list of the files:
+		m2s_ack_packets_parity
+		m2s_axi_completion_parity
+		m2s_axi_data_fetch_command_fifo_parity
+		m2s_axi_data_fetch_request_fifo_parity
+		m2s_axi_data_parity
+		m2s_axi_descriptor_prefetch_command_fifo_parity
+		m2s_axi_descriptor_prefetch_request_fifo_parity
+		m2s_axi_write_completion_command_fifo_parity
+		m2s_axi_write_completion_request_fifo_parity
+		m2s_completion_axi_response_error
+		m2s_completion_axi_timeout
+		m2s_completion_coalescing_parity
+		m2s_data_axi_parity
+		m2s_data_axi_response_error
+		m2s_data_axi_timeout
+		m2s_data_buffer_parity
+		m2s_data_header_parity
+		m2s_max_packet_length_error
+		m2s_msix_response_error
+		m2s_msix_timeout_error
+		m2s_pre-fetch_axi_parity
+		m2s_pre-fetch_axi_response_error
+		m2s_pre-fetch_axi_timeout
+		m2s_pre-fetch_descriptor_parity
+		m2s_pre-fetch_first_error
+		m2s_pre-fetch_header_parity
+		m2s_pre-fetch_last_error
+		m2s_pre-fetch_max_descriptors_error
+		m2s_pre-fetch_ring_id_error
+		m2s_stream_completion_mismatch_error
+		m2s_stream_parity
+		m2s_stream_response_error
+		m2s_stream_timeout
+		m2s_unack_packets_parity
+		s2m_axi_command_fifo_descriptor_prefetch_parity
+		s2m_axi_data_write_data_fifo_parity
+		s2m_axi_data_write_request_fifo_parity
+		s2m_axi_request_fifo_descriptor_prefetch_parity
+		s2m_axi_write_completion_data_fifo_parity
+		s2m_axi_write_completion_request_fifo_parity
+		s2m_compleation_stream_timeout
+		s2m_completion_axi_parity
+		s2m_completion_axi_response_error
+		s2m_completion_axi_timeout
+		s2m_completion_coalescing_parity
+		s2m_completion_unack_timeout
+		s2m_data_axi_parity
+		s2m_data_axi_response_error
+		s2m_data_axi_timeout
+		s2m_data_buffer_parity
+		s2m_data_header_parity
+		s2m_no_descriptors_timeout
+		s2m_packet_length_error
+		s2m_pre-fetch_axi_parity
+		s2m_pre-fetch_axi_response_error
+		s2m_pre-fetch_axi_timeout
+		s2m_pre-fetch_ring_id_error
+		s2m_pre_unack_packets_parity
+		s2m_prefetch_descriptor_parity
+		s2m_stream_data_error
+		s2m_stream_data_parity
+		s2m_stream_first_error
+		s2m_stream_header_error
+		s2m_stream_header_parity
+		s2m_stream_last_error
+		s2m_transaction_table_info_parity
+		s2m_unack_packets_parity
+
+What:		/sys/bus/pci/drivers/al-ssm-pcie/.../crypto/...
+Date:		April 2019
+Contact:	hhhawa@amazon.com
+Description:
+		Crypto folder includes multiple entries, every entry points to a specific
+		error in SSM Crypto engine.
+		Reading this attribute will provide the counter of times the error
+		had been occur.
+		Writing zero to the file will reset the counter.
+		Here is the list of the files:
+		compression_history_exceeded
+		compression_output_controller_compressed_parity_error
+		compression_output_controller_original_parity_error
+		compression_parity_error_-_history_0
+		compression_parity_error_-_history_1
+		compression_parity_error_-_history_10
+		compression_parity_error_-_history_11
+		compression_parity_error_-_history_12
+		compression_parity_error_-_history_13
+		compression_parity_error_-_history_14
+		compression_parity_error_-_history_15
+		compression_parity_error_-_history_2
+		compression_parity_error_-_history_3
+		compression_parity_error_-_history_4
+		compression_parity_error_-_history_5
+		compression_parity_error_-_history_6
+		compression_parity_error_-_history_7
+		compression_parity_error_-_history_8
+		compression_parity_error_-_history_9
+		decompression_invalid_field_composition
+		decompression_invalid_field_size
+		decompression_offset_not_resolved
+		decompression_parity_error_-_history_0
+		decompression_parity_error_-_history_1
+		decompression_parity_error_-_history_2
+		decompression_parity_error_-_history_3
+		decompression_zero_code_word_count
+		eop_without_sop_error
+		fifo_overrun_aligner_error
+		fifo_overrun_d2e_compression_history_error
+		fifo_overrun_d2e_context_error
+		fifo_overrun_d2e_control_error
+		fifo_overrun_d2e_data_error
+		fifo_overrun_d2e_gmac_state_error
+		fifo_overrun_d2e_hash_state_error
+		fifo_overrun_d2e_huffman_dynamic_table_error
+		fifo_overrun_d2e_opad_error
+		fifo_overrun_dmb_function_0_error
+		fifo_overrun_dmb_function_1_error
+		fifo_overrun_dmb_function_2_error
+		fifo_overrun_dmb_function_3_error
+		fifo_overrun_e2d_wb_signature_error
+		fifo_overrun_e2m_intr_error
+		fifo_overrun_e2m_payload_error
+		fifo_overrun_e2m_signature_error
+		fifo_overrun_icv_error
+		fifo_overrun_ingress_error
+		fifo_overrun_iv_error
+		fifo_overrun_sa_error
+		lz77_lzss_compression_cam_entry_not_found
+		lz77_lzss_compression_invalid_alu_command
+		m2s_error
+		m2s_timeout
+		packet_protocol_violation
+		s2m_timeout
+		sa_iv_fifo_out_empty_error
+		sad_authentication_iv_in_parity_error
+		sad_authentication_iv_out_parity_error
+		sad_encryption_parameters_parity_error
+		sad_memories_parity_error
+		sop_with_eop_togther_error
+		sop_without_eop_error
+
+What:		/sys/bus/pci/drivers/al-ssm-pcie/.../raid/...
+Date:		April 2019
+Contact:	hhhawa@amazon.com
+Description:
+		Raid folder includes multiple entries, every entry points to a specific
+		error in SSM Raid engine.
+		Reading this attribute will provide the counter of times the error
+		had been occur.
+		Writing zero to the file will reset the counter.
+		Here is the list of the files:
+		command_decode_error
+		eop_after_eop_error
+		erasure_code_fifo_q_overrun_error
+		erasure_code_fifo_r_overrun_error
+		erasure_code_fifo_s_overrun_error
+		fifo_ack_error_0
+		fifo_ack_error_1
+		fifo_ack_error_2
+		fifo_ack_error_3
+		fifo_queue_overrun_error
+		input_length_error
+		m2s_error
+		m2s_timeout
+		max_length_error
+		memory_1_even_parity_error
+		memory_1_odd_parity_error
+		memory_2_even_parity_error
+		memory_2_odd_parity_error
+		memory_3_even_parity_error
+		memory_3_odd_parity_error
+		memory_4_even_parity_error
+		memory_4_odd_parity_error
+		memory_compare_set_error
+		no_sop_error
+		q_fifo_memory_stage_error
+		s2m_timeout
+		sop_after_eop_error
+		sop_with_eop_error
+
+What:		/sys/bus/pci/drivers/al-ssm-pcie/.../crcN/...
+Date:		April 2019
+Contact:	hhhawa@amazon.com
+Description:
+		SSM include multiple CRC engines, there is multiple crcN folders (0..N),
+		depends on chip revision.
+		Every CRC folder includes multiple entries, every entry points to a specific
+		error in SSM CRC engine.
+		Reading this attribute will provide the counter of times the error
+		had been occur.
+		Writing zero to the file will reset the counter.
+		Here is the list of the files:
+		command_decode_error
+		eop_after_eop_error
+		fifo_ack_error_0
+		fifo_ack_error_1
+		fifo_ack_error_2
+		fifo_ack_error_3
+		fifo_queue_overrun
+		input_length_error
+		m2s_error
+		m2s_timeout
+		max_length_error
+		memory_compare_set_error
+		no_sop_error
+		s2m_timeout
+		sop_after_eop_error
+		sop_with_eop_error

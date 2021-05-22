@@ -502,7 +502,9 @@ static void bcsp_complete_rx_pkt(struct hci_uart *hu)
 			/* handle re-transmitted packet or
 			 * when packet was missed
 			 */
-			BT_ERR("Out-of-order packet arrived, got %u expected %u",
+			/* EOSN-1367: in case of UDM,UDM PRO this message is harmless.
+			   Change a verbosity of the message from BT_ERR to BT_DBG */
+			BT_DBG("Out-of-order packet arrived, got %u expected %u",
 			       bcsp->rx_skb->data[0] & 0x07, bcsp->rxseq_txack);
 
 			/* do not process out-of-order packet payload */

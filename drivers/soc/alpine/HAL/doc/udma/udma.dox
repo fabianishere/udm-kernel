@@ -1,0 +1,252 @@
+/**
+ * @defgroup group_udma UDMA
+ * UDMA HAL driver.
+ *
+ * For documentation see @ref group_udma_doc section.\n
+ * For API reference see @ref group_udma_api section.\n
+ * For UDMA HAL usage samples see @ref group_udma_samples section.\n
+ *
+ * @defgroup group_udma_doc Documentation
+ * @ingroup group_udma
+ * @{
+ * @page udmadoc
+ * @ref udma_overview\n
+ * @ref udma_main\n
+ * @ref udma_config\n
+ * @ref udma_m2mudma\n
+ * @section udma_overview Overview
+ * The UDMA is a hardware unit that used by several Annapurna Labs controllers/engines (Like
+ * Ethernet Controller or Crypto Engine) for the transactions fetching, data transfer and
+ * the completion indications from/to the memory. This unit is always paired with a
+ * controller or processing engine that does something with the data, hence the UDMA HAL
+ * driver by itself isn’t a driver for specific controller, but, it is used by the drivers
+ * of the controllers
+ * to manage the UDMA portion of that controller.
+ * Since the UDMA HAL will be used in critical data paths like Ethernet Tx/Rx, a lot of
+ * diligence have been put on performance optimization, while keeping the code simple.
+ * The UDMA HAL was designed to provide a minimal layer between the driver and the
+ * underlying hardware, giving the driver all the flexibility to manage the UDMA according
+ * to its needs.
+ * The UDMA HAL contains the following components:
+ * - UDMA main: contains the initializations and data path functionalities.
+ * - UDMA config: contains functions for various hardware configurations.
+ * - M2M UDMA: the M2M UDMA is a special case where M2S and S2M UDMAs are paired, and
+ * provides common functionality between different DMA's that use M2S and S2M UDMAs; this is
+ * the case for the RAID and Crypto Acceleration DMAs.
+ * @par UDMA HAL blocks:
+ * @image html udma/udma_block_diagram.png
+ * @subsection udma_ov_intpolscheme Interrupt and/or polling scheme
+ * The UDMA can work in interrupt or polling scheme.
+ * @section udma_main UDMA Main
+ * @subsection udma_main_ds Data Structures
+ * @subsection udma_main_notes General Notes
+ * HAL internal data structures that are heavily accessed through the data path are
+ * cache-line aligned to minimize cache snooping between CPUs.
+ * @subsection udma_main_caps Capabilities and Hardware Configuration
+ * The UDMA implementation is common to most controllers integrated into Annapurna Labs’
+ * chips.  However, each instance of the UDMA could have different hardware capabilities,
+ * like the number of queues, the number of descriptors per packet/transaction etc.
+ * The specific per-instance capability is reflect in a hardware register(s) called “Feature
+ * Register”, which also includes the revision ID in addition to the hardware capabilities.
+ * @subsection udma_main_queueds UDMA and Queues Data Structures
+ * Each UDMA can either be an M2S or S2M type (enum al_udma_type).
+ * Each UDMA is built from several Queues (al_udma and al_udma_q structures).
+ * Each Queue contains submission descriptors ring and a completion descriptors ring (
+ * al_udma_desc and al_udma_cdesc structures) that represent the actual ring descriptors
+ * used by the hardware engine.
+ * The submission descriptors and completion descriptors rings implemented as circular
+ * structure, which are useful for high performance lockless producer/consumer flows.
+ * In case two producers or consumers are trying to use the same UDMA queue a proper locking
+ * should be applied.
+ * The upper layer software is the producer of the submission descriptors, preparing the
+ * packets (consisting of buffer descriptors and metadata descriptors) for the hardware,
+ * which act as a consumer.
+ * On the other hand the upper layer software is the consumer of the completion descriptors,
+ * while the UDMA engine is the producer preparing metadata and status on each completion
+ * descriptor.
+ * Both submission and completion descriptors are allocated as an array on the system memory.
+ * The submission descriptors array is only written by the CPU and read by the hardware.
+ * The completion descriptors array is only written by the UDMA engine and read by the CPU.\n
+ * The al_udma_q structure maintains the following pointers:
+ * - next_desc: a pointer within the descriptors array, it points to the next place where
+ * new descriptor should be added, this pointer acts as the descriptors ring tail.
+ * - next_cdesc: a pointer within the completion descriptors array, it points to the next
+ * completion descriptor to handle, this pointer acts as the completion ring head.\n
+ *
+ * The UDMA engine architecture involves a producer placing data into one end of the ring,
+ * while the consumer removes data from the other. When the end of the array is reached, the
+ * producer or the consumer wrap back around to the beginning of the array.
+ * In order to simplify the full/empty indication of the queue, we will assume the queue
+ * size is the array size minus.
+ * All descriptors accesses by the host are wrapped with swapX_to_le/ swapX_from_le macros
+ * in order to enable support for all endianess modes (by default when working in little
+ * endian mode these macros will be empty).
+ * @note The architecture is designed such that there is not mandatory requirement to use
+ * same CPU core for the descriptor submission and the completion descriptor process, and
+ * they could be two separate CPU.
+ * @par UDMA data structure:
+ * @image html udma/udma_data_structure.png
+ * @subsection udma_main_datapath Data Path APIs
+ * The data path APIs are optimized for best performance:
+ * - API Parameters correctness is validated only through AL_ASSERT and can be bypassed through compilation
+ * configuration.
+ * - Using likely/unlikely for conditional operation in order to hint the compiler on common * flows.
+ * - Using inline APIs to avoid function call overhead.\n
+ *
+ * The data path APIs supplies the building blocks for the upper layer to easily manipulate
+ * the UDMA descriptors queues in the most optimized way.
+ * @subsection udma_main_performance Performance aspects and CPU affinity
+ * All operations are done on a specific queue basis to enable multiple queues processing
+ * in parallel and avoid locking of the entire DMA through the critical data path. Separate
+ * queues of the same UDMA could be servicing different CPU cores concurrently, without
+ * creating cache “cross-talk”.
+ *
+ * In case of a single producer and single consumer for the specific queue, there is no
+ * need for any locking.
+ *
+ * A further performance optimization is achieved by designing the system to have no
+ * dependency between the queue submission APIs and queue completion APIs (which can also
+ * be treated in interrupt context).
+ *
+ * The available descriptors are calculated according to the submission and completion next
+ * descriptor index. In case the completion CPU is different from the submission CPU only
+ * these indexes will be snooped for coherency between the CPUs.
+ * @subsection udma_main_subm Submission APIs
+ * These APIs supply the building blocks for sending packets through the UDMA M2S engine
+ * and preparing buffers for receiving packets through the UDMA S2M engine.
+ * - al_udma_available_get() - Returns the number of available descriptors in the ring.
+ * The upper layer recommended not to assume anything about the number of available
+ * descriptors, instead, it should use this API to validate that enough descriptors are
+ * available before calling al_udma_desc_get().
+ *
+ * In combined UDMA M2S/UDMA S2M flows (like RAID/Crypto) the upper layer software needs to
+ * call this API for both the M2S and S2M before calling al_udma_desc_get() to insure there
+ * are enough descriptors in both M2S and S2M before calling the get function.
+ * - al_udma_desc_get()  - Allocates submission descriptor(s).
+ * This function returns the address of the next available submission descriptor(s) by
+ * incrementing the UDMA Q next descriptor index (which is a software index,  and not the
+ * hardware tail pointer) and returns the physical address pointer to the first allocated
+ * descriptor.
+ * The upper layer software must set the descriptor fields  (flags, ringId, buffer pointer,
+ * length and metadata).  The ringId of the descriptor should be gained using the
+ * al_udma_ring_id_get() API function.  When the requested request spans over multiple
+ * submission descriptor, the upper layer should iterate calling al_udma_desc_get() and
+ * al_udma_ring_id_get() for each descriptor, Once done, the API al_udma_desc_action_add()
+ * should be called n order to pass these descriptors to the hardware processing.
+ *
+ * The sequence al_udma_desc_get(), al_udma_ring_id_get() and al_udma_desc_action_add()
+ * should be treated, as atomic operation to ensure there is no race with other
+ * threads/processes that are trying to append descriptors to the same Q.  Typically this
+ * is guaranteed for kernel drivers with single queue attached to single function.
+ *
+ * - al_udma_ring_id_get() – get ring id for the latest allocated submission descriptor.
+ * This function must be called following each descriptor allocation (al_udma_desc_get()).
+ * - al_udma_desc_action_add() - trigger the engine to process number of descriptors.
+ * Writing number to the queue tail_inc register (TDRTP_inc).
+ *
+ * @subsection udma_main_complapi Completion APIs
+ * The completion can be triggered as results of interrupt received from the UDMA hardware
+ * (in case a submission description requested an interrupt enable for the corresponding
+ * completion), or by software-based polling.
+ * The Software-polling is typically used when reaching an out-of-resource or certain
+ * threshold of available descriptors or a safety timer expiration etc.
+ *
+ * The UDMA HAL supplies two modes of completion: (a) completion-per-packet, or (b)
+ * Aggregate completion.
+ *
+ * It is better to use the per-packet-completion for cases where the metadata in the
+ * completion descriptor is important for proper behavior of the system. In this mode, and
+ * to improve performance, the software could read the completion descriptor directly and
+ * avoid reading the hardware queue head pointer register (Q.TCRHP).
+ *
+ * Using per packet completion makes it easier for the upper layer software to maintain its
+ * own data structures based on packets and not descriptors.
+ *
+ * When the upper layer doesn’t require a per completed packet action, for example when
+ * working in an M2M mode like RAID or Crypto, where the completion of the M2S is not
+ * really needed as the S2M completion will be enough indication, it is better to use the
+ * Aggregate completion mode.
+ * @note It is recommended that the upper layer software should use only one of these
+ * completion modes on a specific Q.
+ *
+ * - al_udma_cdesc_packet_get()  - per packet completion, get next completed packet from
+ * the completion queue. This API scans the completion descriptors ring until one of one of the following
+ * conditions are met:
+ * -# A descriptor with the \<Last\> bit set in the control byte. Or
+ * -# A non-valid \<RingID\> (meaning old descriptor).
+ *
+ * When condition (a) is met, the function update the parameter cdesc with the pointer to
+ * the first completed descriptor of the packet and return the number of descriptors of the
+ * packet.
+ * When condition (b) is met, the function returns 0.
+ *
+ * In any case, the function saves the last completion descriptor it processed, so next
+ * time it is called, it will continue processing completion ring following that descriptor.
+ * Note: This API doesn’t read any hardware register.
+ *
+ * The upper layer software can go through the Completion Descriptors by using the
+ * al_cdesc_next() API, those descriptors will be still marked by the UDMA HAL as used and
+ * prevents the Hardware from further access to it, so the upper layer is safe to access
+ * those descriptors as long as it didn’t acknowledge it.
+ *
+ * - al_cdesc_next()  - This API returns pointer to next completion descriptor in the array
+ * and take care of wrapping through the end of the array.
+ * al_udma_cdesc_get_all() – general completion, gets all completed descriptors.
+ * This API doesn’t scan the completion descriptor, it read the completion head HW register
+ * and returns the number of completed descriptors and a pointer to first one. Those
+ * descriptors will be still marked by the UDMA HAL as used and prevents the HW from further
+ * access to it, so the upper layer is safe to access those descriptors as long as it didn’t
+ * acknowledge it.
+ *
+ * The upper layer can go through the descriptors by using the al_cdesc_next() API.
+ * - al_udma_cdesc_ack() – acknowledge the driver that the upper layer completed processing
+ * completion descriptors.
+ * This API will increment the next completion descriptor index to handle.
+ * Following a al_udma_cdesc_packet_get() / al_udma_cdesc_get_all(), the upper layer
+ * software must acknowledge the UDMA HAL by calling al_udma_cdesc_ack() with the number of
+ * descriptors that were handled by it.
+ * The al_udma_cdesc_packet_get() / al_udma_cdesc_get_all() and the al_udma_cdesc_ack() should
+ * be treated, as atomic operation to ensure there is no race with other agents that are
+ * trying to get completion descriptors from the same Q.
+ * @par Typical Submission Completion API usage:
+ * @image html udma/udma_sub_comp_api_usage.png
+ * @section udma_config UDMA Config
+ * This component contains functions for various hardware configurations of the UDMA, such as:
+ * - Interrupt Coalescing.
+ * - Queue based Rate limiting.
+ * - Scheduling between different UDMAs and Queues.
+ * - Timeout for transaction from the Chips internal bus (AXI).
+ * - Prefetch size.
+ * - Statistics.
+ * - And many other configurations.
+ *
+ * HAL components that built on top of the UDMA may not provide APIs that encapsulate the UDMA Config, and
+ * upper layers can use the UDMA Config directly.
+ * For example, the network glue, that uses the Ethernet HAL for management and Ethernet specific
+ * configurations, but, when UDMA specific configuration is needed, that layer can directly call the UDMA
+ * Config API functions.
+ *
+ * @section udma_m2mudma Memory to Memory (M2M) UDMA
+ * The M2M UDMA is a software concept that defines a DMA that is consisted of a pair: an M2S UDMA and an S2M
+ * UDMA, this concept is used to share common functionality between different DMA's that use M2S and S2M
+ * UDMAs; this is the case for the RAID and Crypto Acceleration DMAs. The M2M UDMA is built on top of the UDMA
+ * driver, while the later manages either S2M or M2S UDMA, the M2M instantiates two UDMA engines, and uses the
+ * UDMA driver to manage and provide the following functionalities:
+ * - S2M and M2S UDMA initialization.
+ * - S2M and M2S UDMA Queues initialization.
+ * - Manages the state of the two UDMAs.
+ *
+ * Other functionalities will be provided by directly accessing the UDMA driver.
+ * @par UDMA M2M concept:
+ * @image html udma/udma_m2m_concept.png
+ * @subsection udma_m2mudma_locking Locking
+ * All operations are done on a specific queue basis to enable multiple queues processing in parallel and
+ * avoid locking of the entire DMA through the critical data path. Separate queues of the same M2M UDMA could
+ * be servicing different CPU cores concurrently, without create cache “cross-talk”.
+ *
+ * In the absence of multiple producers nor consumers for the specific queue, there is no need for any locking.
+ * A further performance optimization is achieved by having no dependency between the queue submission APIs
+ * and queue completion APIs.
+ * @}
+ *
+ */

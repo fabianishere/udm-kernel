@@ -119,6 +119,7 @@ static int dw_spi_mmio_probe(struct platform_device *pdev)
 	struct resource *mem;
 	int ret;
 	int num_cs;
+	int bus_num;
 
 	dwsmmio = devm_kzalloc(&pdev->dev, sizeof(struct dw_spi_mmio),
 			GFP_KERNEL);
@@ -148,7 +149,12 @@ static int dw_spi_mmio_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	dws->bus_num = pdev->id;
+	bus_num = pdev->id;
+
+	if (pdev->dev.of_node)
+		of_property_read_u32(pdev->dev.of_node, "bus-num", &bus_num);
+
+	dws->bus_num = bus_num;
 
 	dws->max_freq = clk_get_rate(dwsmmio->clk);
 

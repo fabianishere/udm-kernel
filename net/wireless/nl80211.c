@@ -469,6 +469,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_TXQ_QUANTUM] = { .type = NLA_U32 },
 	[NL80211_ATTR_HE_CAPABILITY] = { .type = NLA_BINARY,
 					 .len = NL80211_HE_MAX_CAPABILITY_LEN },
+	[NL80211_ATTR_STA_ROAMED] = { .type = NLA_FLAG },
 };
 
 /* policy for the key attributes */
@@ -5641,6 +5642,10 @@ static int nl80211_del_station(struct sk_buff *skb, struct genl_info *info)
 	} else {
 		/* Default to reason code 2 */
 		params.reason_code = WLAN_REASON_PREV_AUTH_NOT_VALID;
+	}
+
+	if (info->attrs[NL80211_ATTR_STA_ROAMED]) {
+		params.sta_roamed = 1;
 	}
 
 	return rdev_del_station(rdev, dev, &params);

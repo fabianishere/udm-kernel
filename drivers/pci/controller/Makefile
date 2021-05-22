@@ -29,6 +29,12 @@ obj-$(CONFIG_PCIE_MEDIATEK) += pcie-mediatek.o
 obj-$(CONFIG_PCIE_MOBIVEIL) += pcie-mobiveil.o
 obj-$(CONFIG_PCIE_TANGO_SMP8759) += pcie-tango.o
 obj-$(CONFIG_VMD) += vmd.o
+
+include $(srctree)/drivers/soc/alpine/alpine_hal.mk
+obj-$(CONFIG_PCI_INTERNAL_ALPINE) += pci-internal-alpine.o
+obj-$(CONFIG_PCI_EXTERNAL_ALPINE) += pci-external-alpine.o
+obj-$(CONFIG_PCI_EXTERNAL_ERR_ALPINE) += pci-external-err-alpine.o
+
 # pcie-hisi.o quirks are needed even without CONFIG_PCIE_DW
 obj-y				+= dwc/
 

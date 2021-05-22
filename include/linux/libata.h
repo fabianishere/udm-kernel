@@ -1013,6 +1013,11 @@ struct ata_port_operations {
 	 * fields must be pointers.
 	 */
 	const struct ata_port_operations	*inherits;
+
+	int (*al_link_hardreset)(struct ata_link *link,
+				 const unsigned long *timing,
+				 unsigned long deadline);
+	bool (*al_ahci_sss_wa_needed)(struct device *dev);
 };
 
 struct ata_port_info {

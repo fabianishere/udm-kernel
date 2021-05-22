@@ -1,0 +1,119 @@
+Generic Thermal MMIO sensor management
+
+Generic thermal driver that allows easy connection between
+thermal HW to Linux thermal subsystem.
+
+Required properties :
+- compatible : "thermal-mmio".
+- reg : Should contain 1 entry:
+- #thermal-sensor-cells : Should be 1. See ./thermal.txt for a description
+    of this property.
+- sensors-count : number of sensors in the mmio
+- sensor-width : the byte width of each sensor value
+- sensor-factor : the multiplication value to be applied on the
+   sensor read value in order to represented as millicelsius
+
+
+Example 1, single sensor, 4 byte value in millicelsius :
+	thermal {
+		compatible = "thermal-mmio";
+		#thermal-sensor-cells = <0x1>;
+		reg = <0x0 0xfd8cf104 0x0 0x4>;
+		sensors-count = <1>;
+		sensor-width = <4>;
+		sensor-factor = <1>;
+	};
+
+Example 1 : referring to thermal sensor :
+
+	thermal-zones {
+		cpu_thermal: cpu-thermal {
+			polling-delay-passive = <250>; /* milliseconds */
+			polling-delay = <1000>; /* milliseconds */
+
+			thermal-sensors = <&thermal 0>;
+
+			trips {
+				cpu_crit: cpu-crit {
+					temperature = <105000>; /* millicelsius */
+					hysteresis = <2000>; /* millicelsius */
+					type = "critical";
+				};
+			};
+		};
+	};
+
+Example 2, four sensors with 1 byte value each represented in celsius :
+
+	thermal {
+		compatible = "thermal-mmio";
+		#thermal-sensor-cells = <0x1>;
+		reg = <0x0 0xfd8cf104 0x0 0x4>;
+		sensors-count = <4>;
+		sensor-width = <1>;
+		sensor-factor = <1000>;
+	};
+
+Example 2: referring to thermal sensors :
+
+	thermal-zones {
+			cpu_thermal: cpu-thermal {
+				polling-delay-passive = <250>; /* milliseconds */
+				polling-delay = <1000>; /* milliseconds */
+
+				thermal-sensors = <&thermal 0>;
+
+				trips {
+					cpu_crit: cpu-crit {
+						temperature = <105000>; /* millicelsius */
+						hysteresis = <2000>; /* millicelsius */
+						type = "critical";
+					};
+				};
+			};
+
+			remote0_thermal: remote0-thermal {
+				polling-delay-passive = <250>; /* milliseconds */
+				polling-delay = <1000>; /* milliseconds */
+
+				thermal-sensors = <&thermal 1>;
+
+				trips {
+					remote0_crit: remote0-crit {
+						temperature = <105000>; /* millicelsius */
+						hysteresis = <2000>; /* millicelsius */
+						type = "critical";
+					};
+				};
+			};
+
+			remote1_thermal: remote1-thermal {
+				polling-delay-passive = <250>; /* milliseconds */
+				polling-delay = <1000>; /* milliseconds */
+
+				thermal-sensors = <&thermal 2>;
+
+				trips {
+					remote1_crit: remote1-crit {
+						temperature = <105000>; /* millicelsius */
+						hysteresis = <2000>; /* millicelsius */
+						type = "critical";
+					};
+				};
+			};
+
+			remote2_thermal: remote2-thermal {
+				polling-delay-passive = <250>; /* milliseconds */
+				polling-delay = <1000>; /* milliseconds */
+
+				thermal-sensors = <&thermal 3>;
+
+				trips {
+					remote2_crit: remote2-crit {
+						temperature = <105000>; /* millicelsius */
+						hysteresis = <2000>; /* millicelsius */
+						type = "critical";
+					};
+				};
+			};
+		};

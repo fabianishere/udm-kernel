@@ -301,7 +301,7 @@ static int dev_ifsioc(struct net *net, struct ifreq *ifr, unsigned int cmd)
 	 */
 	default:
 		if ((cmd >= SIOCDEVPRIVATE &&
-		    cmd <= SIOCDEVPRIVATE + 15) ||
+		    cmd <= SIOCDEVPRIVATE + SIOCDEVPRIVATE_LEN) || // UBNT - extended SIOCDEVPRIVATE to 0x8aff for ubnt_ioctl.h
 		    cmd == SIOCBONDENSLAVE ||
 		    cmd == SIOCBONDRELEASE ||
 		    cmd == SIOCBONDSETHWADDR ||
@@ -507,7 +507,7 @@ int dev_ioctl(struct net *net, unsigned int cmd, struct ifreq *ifr, bool *need_c
 		if (cmd == SIOCWANDEV ||
 		    cmd == SIOCGHWTSTAMP ||
 		    (cmd >= SIOCDEVPRIVATE &&
-		     cmd <= SIOCDEVPRIVATE + 15)) {
+		     cmd <= SIOCDEVPRIVATE + SIOCDEVPRIVATE_LEN)) { // UBNT - extended SIOCDEVPRIVATE to 0x8aff for ubnt_ioctl.h
 			dev_load(net, ifr->ifr_name);
 			rtnl_lock();
 			ret = dev_ifsioc(net, ifr, cmd);

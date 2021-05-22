@@ -815,7 +815,11 @@ static inline struct hci_conn *hci_conn_hash_lookup_ba(struct hci_dev *hdev,
 	rcu_read_lock();
 
 	list_for_each_entry_rcu(c, &h->list, list) {
+#ifdef CONFIG_BT_NORDIC_QUIRK_LOOKUP_FIX
+		if (!bacmp(&c->dst, ba)) {
+#else
 		if (c->type == type && !bacmp(&c->dst, ba)) {
+#endif
 			rcu_read_unlock();
 			return c;
 		}

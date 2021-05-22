@@ -175,6 +175,10 @@ MODULE_DESCRIPTION("Library module for ATA devices");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_VERSION);
 
+int al_ahci_sss_port_number = -1;
+module_param_named(alpine_sss_port_number, al_ahci_sss_port_number, int, 0444);
+MODULE_PARM_DESC(alpine_sss_port_number,
+		 "Enable hardreset for staggered spinup for specific AHCI host (host_number = host number to enable the hardreset (ataXX), -1 = enabled for all ports)");
 
 static bool ata_sstatus_online(u32 sstatus)
 {
@@ -4095,27 +4099,43 @@ int sata_link_hardreset(struct ata_link *link, const unsigned long *timing,
 		sata_set_spd(link);
 	}
 
-	/* issue phy wake/reset */
-	if ((rc = sata_scr_read(link, SCR_CONTROL, &scontrol)))
-		goto out;
+	if (link->ap->ops->al_ahci_sss_wa_needed(link->ap->host->dev)) {
+		u32 host_num = link->ap->scsi_host->host_no;
 
-	scontrol = (scontrol & 0x0f0) | 0x301;
+		if (host_num == al_ahci_sss_port_number ||
+		    al_ahci_sss_port_number == -1) {
+			pr_debug("Link reset for AHCI host num %d", host_num);
+			rc = link->ap->ops->al_link_hardreset(link, timing,
+							      deadline);
+			if (rc)
+				goto out;
+		} else {
+			pr_warn("Warning: Link reset was skiped for AHCI host num %d",
+				host_num);
+		}
+	} else {
+		/* issue phy wake/reset */
+		if ((rc = sata_scr_read(link, SCR_CONTROL, &scontrol)))
+			goto out;
 
-	if ((rc = sata_scr_write_flush(link, SCR_CONTROL, scontrol)))
-		goto out;
+		scontrol = (scontrol & 0x0f0) | 0x301;
 
-	/* Couldn't find anything in SATA I/II specs, but AHCI-1.1
-	 * 10.4.2 says at least 1 ms.
-	 */
-	ata_msleep(link->ap, 1);
+		if ((rc = sata_scr_write_flush(link, SCR_CONTROL, scontrol)))
+			goto out;
 
-	/* bring link back */
-	rc = sata_link_resume(link, timing, deadline);
-	if (rc)
-		goto out;
-	/* if link is offline nothing more to do */
-	if (ata_phys_link_offline(link))
-		goto out;
+		/* Couldn't find anything in SATA I/II specs, but AHCI-1.1
+		 * 10.4.2 says at least 1 ms.
+		 */
+		ata_msleep(link->ap, 1);
+
+		/* bring link back */
+		rc = sata_link_resume(link, timing, deadline);
+		if (rc)
+			goto out;
+		/* if link is offline nothing more to do */
+		if (ata_phys_link_offline(link))
+			goto out;
+	}
 
 	/* Link is online.  From this point, -ENODEV too is an error. */
 	if (online)

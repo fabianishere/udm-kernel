@@ -143,8 +143,8 @@
  *	THESE IOCTLS ARE _DEPRECATED_ AND WILL DISAPPEAR IN 2.5.X -DaveM
  */
  
-#define SIOCDEVPRIVATE	0x89F0	/* to 89FF */
-
+#define SIOCDEVPRIVATE		0x89F0	/* UBNT - to 8AFF */
+#define SIOCDEVPRIVATE_LEN	0x10F
 /*
  *	These 16 ioctl calls are protocol private
  */

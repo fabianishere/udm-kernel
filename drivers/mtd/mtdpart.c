@@ -354,6 +354,7 @@ static struct mtd_part *allocate_partition(struct mtd_info *parent,
 	slave->mtd.oobavail = parent->oobavail;
 	slave->mtd.subpage_sft = parent->subpage_sft;
 	slave->mtd.pairing = parent->pairing;
+	slave->mtd.jedec_id = parent->jedec_id;
 
 	slave->mtd.name = name;
 	slave->mtd.owner = parent->owner;

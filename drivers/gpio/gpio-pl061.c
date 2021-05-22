@@ -23,6 +23,7 @@
 #include <linux/gpio/driver.h>
 #include <linux/device.h>
 #include <linux/amba/bus.h>
+#include <linux/amba/pl061.h>
 #include <linux/slab.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/pm.h>
@@ -285,12 +286,33 @@ static int pl061_irq_set_wake(struct irq_data *d, unsigned int state)
 static int pl061_probe(struct amba_device *adev, const struct amba_id *id)
 {
 	struct device *dev = &adev->dev;
+	struct pl061_platform_data *pdata = dev_get_platdata(dev);
 	struct pl061 *pl061;
-	int ret, irq;
+	int ret, irq, irq_base = 0;
 
 	pl061 = devm_kzalloc(dev, sizeof(*pl061), GFP_KERNEL);
 	if (pl061 == NULL)
 		return -ENOMEM;
+
+        if (pdata) {
+		pl061->gc.base = pdata->gpio_base;
+		irq_base = pdata->irq_base;
+		if (irq_base <= 0) {
+			dev_err(&adev->dev, "invalid IRQ base in pdata\n");
+			return -ENODEV;
+		}
+	} else if (adev->dev.of_node) {
+		const void *ptr;
+		unsigned int baseidx = -1; /* GPIO dynamic allocation */
+
+		ptr = of_get_property(adev->dev.of_node, "baseidx", NULL);
+		if (ptr)
+			baseidx = be32_to_cpup(ptr);
+		pl061->gc.base = baseidx;
+	} else {
+		pl061->gc.base = -1;
+		irq_base = 0;
+	}
 
 	pl061->base = devm_ioremap_resource(dev, &adev->res);
 	if (IS_ERR(pl061->base))
@@ -302,7 +324,6 @@ static int pl061_probe(struct amba_device *adev, const struct amba_id *id)
 		pl061->gc.free = gpiochip_generic_free;
 	}
 
-	pl061->gc.base = -1;
 	pl061->gc.get_direction = pl061_get_direction;
 	pl061->gc.direction_input = pl061_direction_input;
 	pl061->gc.direction_output = pl061_direction_output;

@@ -1033,6 +1033,7 @@ struct station_del_parameters {
 	const u8 *mac;
 	u8 subtype;
 	u16 reason_code;
+	bool sta_roamed;
 };
 
 /**

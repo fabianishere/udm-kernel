@@ -1,0 +1,17 @@
+Amazon PCIe Error Events driver
+
+The PCIe error events driver detect two types of errors, AXI and APP.
+AXI: Errors between the AXI bus and PCIEe.
+APP: Errors in the upper layer of the controller (alpine layer).
+
+This driver run in polling mode and collect all events for both AXI and
+APP types. Panic (optional - controlled by device-tree and sysfs) when
+uncorrectable error occur.
+
+Required properties:
+- compatible: "amazon,al-pcie-external-err".
+- reg: The physical base address and length of PCIe controller.
+- pcie-port-num: PCIe port number
+
+Optional properties:u
+- panic-on-ue: To enable kernel panic when uncorrectable error occur.

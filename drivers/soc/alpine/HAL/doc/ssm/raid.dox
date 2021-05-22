@@ -1,0 +1,65 @@
+/**
+ * @defgroup group_raid RAID Acceleration Engine
+ * RAID HAL driver.
+ *
+ * For documentation see @ref group_raid_doc section.\n
+ * For API reference see @ref group_raid_api section.\n
+ *
+ * @defgroup group_raid_doc Documentation
+ * @ingroup group_raid
+ * @{
+ * @page raiddoc
+ * @ref raid_overview\n
+ * @ref raid_flows\n
+ * @section raid_overview Overview
+ * This HAL provides the initialization functions, and software API for submitting transactions to the RAID and
+ * memory transformation engine, which includes memory copy, memory compare, RAID5 and RAID6 functions etc.
+ *
+ * The RAID acceleration controller contains the following components:
+ * - M2M UDMA (built out of pair of M2S and S2M).
+ * - RAID Application layer.
+ * Requested operation is inserted into the M2S UDMA by adding submission descriptors into the submission ring
+ * of the M2S UDMA, the descriptors contains the operation type (mem copy, xor, etc.) and pointers to the
+ * source buffers.
+ * The M2S UDMA fetches those descriptors along with the source buffers data from system memory and transfers
+ * it to the application layer.
+ * The application layer in its turn generates the output data according to the request type, and streams this
+ * data to S2M UDMA, the S2M UDMA fetches descriptor from it's submission ring and according to its contents
+ * knows where to write the data that it receives from the application layer.
+ * Once the data stream of the operation done, The S2M UDMA finishes the request by writing descriptors to the
+ * completion ring. The S2M UDMA writes completion descriptor for each descriptor it fetched from the S2M
+ * submission ring.
+ * @subsection raid_ov_ds Data Structure
+ * The HAL driver maintains M2M UDMA structure as the HW consists of two UDMAs (See al_m2m_udma). Both of
+ * the UDMAs initialized and managed using the M2M UDMA module.
+ * As of this version, the completion queue of the M2S is ignored and the HAL does not rely on its functionality
+ * However, the S2M completion descriptions and ring are used as an integral part of this design.
+ * @section raid_flows Software Flows
+ * @subsection raid_flows_send Sending Transactions (Request) to the HW
+ * al_raid_dma_action()  perform the following steps:
+ * - Calculate need RX descriptors and check if the RX UDMA have available space.
+ * The number of descriptors of each type depends on the operation type, and number of source/destination
+ * buffers.
+ * - Do the same for TX descriptors.
+ * - Prepare the RX descriptors.
+ * - Update the tail pointer of the submission ring of the RX UDMA about the new prepared descriptors.
+ * - Prepare the TX descriptors.
+ * - Update the tail pointer of the submission ring of the TX UDMA about the new prepared descriptors.
+ *
+ * @note Each transaction requires at least one TX descriptor and at least one RX descriptor.
+ *
+ * @subsection raid_flows_comp Completing Transactions
+ * When the upper layer decides to check for completed transaction (e.g. due to interrupt) it calls
+ * al_raid_dma_completion() API function that provided by this driver.
+ * This function used the UDMA al_udma_cdesc_packet_get() to check for completed requests.
+ * The al_raid_dma_completion() is responsible for the cleanup of the completed request from the completion
+ * ring, so upper layer don't need to worry about the queues management.
+ * This driver doesn't tell the upper layer which transaction is completed, the upper layer should find this
+ * information by itself relying on the fact that for a given queue, the transaction completed in the same
+ * order it was sent to the same queue, no ordering is guaranteed between transaction that sent to different
+ * queues.
+ *
+ * @par RAID Action Completion Flow:
+ * @image html ssm/raid_action_comp_flow.png
+ * @}
+ */

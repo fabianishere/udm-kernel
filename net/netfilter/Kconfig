@@ -163,6 +163,13 @@ config NF_CONNTRACK_LABELS
 	  to connection tracking entries.  It can be used with xtables connlabel
 	  match and the nftables ct expression.
 
+config NF_CONNTRACK_DPI
+	bool 'Connection tracking DPI'
+	depends on NETFILTER_ADVANCED
+	help
+	  This option enables support for storing DPI info in connection tracking
+	  entries.
+
 config NF_CT_PROTO_DCCP
 	bool 'DCCP protocol connection tracking support'
 	depends on NETFILTER_ADVANCED
@@ -1248,6 +1255,12 @@ config NETFILTER_XT_MATCH_DSCP
 	  the same bits as DSCP).
 
 	  To compile it as a module, choose M here.  If unsure, say N.
+
+config NETFILTER_XT_MATCH_DYN_RANDOM
+	tristate  '"dyn_random" match support'
+	depends on NETFILTER_ADVANCED
+	help
+	  This option adds a `dyn_random' match.
 
 config NETFILTER_XT_MATCH_ECN
 	tristate '"ecn" match support'

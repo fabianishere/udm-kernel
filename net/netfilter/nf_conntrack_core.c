@@ -51,6 +51,7 @@
 #include <net/netfilter/nf_conntrack_timeout.h>
 #include <net/netfilter/nf_conntrack_labels.h>
 #include <net/netfilter/nf_conntrack_synproxy.h>
+#include <net/netfilter/nf_conntrack_dpi.h>
 #include <net/netfilter/nf_nat.h>
 #include <net/netfilter/nf_nat_core.h>
 #include <net/netfilter/nf_nat_helper.h>
@@ -1445,6 +1446,7 @@ init_conntrack(struct net *net, struct nf_conn *tmpl,
 	nf_ct_acct_ext_add(ct, GFP_ATOMIC);
 	nf_ct_tstamp_ext_add(ct, GFP_ATOMIC);
 	nf_ct_labels_ext_add(ct);
+	nf_ct_dpi_ext_add(ct);
 
 	ecache = tmpl ? nf_ct_ecache_find(tmpl) : NULL;
 	nf_ct_ecache_ext_add(ct, ecache ? ecache->ctmask : 0,
@@ -2105,6 +2107,7 @@ void nf_conntrack_cleanup_end(void)
 	nf_conntrack_tstamp_fini();
 	nf_conntrack_acct_fini();
 	nf_conntrack_expect_fini();
+	nf_conntrack_dpi_fini();
 
 	kmem_cache_destroy(nf_conntrack_cachep);
 }
@@ -2363,6 +2366,10 @@ int nf_conntrack_init_start(void)
 	if (ret < 0)
 		goto err_labels;
 
+	ret = nf_conntrack_dpi_init();
+	if (ret < 0)
+		goto err_dpi;
+
 	ret = nf_conntrack_seqadj_init();
 	if (ret < 0)
 		goto err_seqadj;
@@ -2379,6 +2386,8 @@ int nf_conntrack_init_start(void)
 err_proto:
 	nf_conntrack_seqadj_fini();
 err_seqadj:
+	nf_conntrack_dpi_fini();
+err_dpi:
 	nf_conntrack_labels_fini();
 err_labels:
 	nf_conntrack_helper_fini();

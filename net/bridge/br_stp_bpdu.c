@@ -139,6 +139,10 @@ void br_send_tcn_bpdu(struct net_bridge_port *p)
 	br_send_bpdu(p, buf, 4);
 }
 
+//: UBNT loop detection
+void (*ubnt_loop_detection)(struct sk_buff *skb, struct net_device *dev);
+EXPORT_SYMBOL(ubnt_loop_detection);
+
 /*
  * Called from llc.
  *
@@ -153,6 +157,9 @@ void br_stp_rcv(const struct stp_proto *proto, struct sk_buff *skb,
 
 	if (!pskb_may_pull(skb, 4))
 		goto err;
+
+	if (ubnt_loop_detection)
+		ubnt_loop_detection(skb, dev);
 
 	/* compare of protocol id and version */
 	buf = skb->data;

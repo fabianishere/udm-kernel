@@ -553,7 +553,7 @@
 #define IW_SCAN_CAPA_TIME		0x40
 
 /* Max number of char in custom event - use multiple of them if needed */
-#define IW_CUSTOM_MAX		256	/* In bytes */
+#define IW_CUSTOM_MAX		2048	/* In bytes */ /* UBNT: increased from 256 */
 
 /* Generic information element */
 #define IW_GENERIC_IE_MAX	1024
@@ -940,6 +940,10 @@ struct iwreq {
 
 	/* Data part (defined just above) */
 	union iwreq_data	u;
+#ifdef __aarch64__
+    /* For aligning to ifreq size in 64 bit platform */
+     __u32   reserved[2];
+#endif
 };
 
 /* -------------------------- IOCTL DATA -------------------------- */

@@ -199,6 +199,25 @@ config THERMAL_EMULATION
 	  because userland can easily disable the thermal policy by simply
 	  flooding this sysfs node with low temperature values.
 
+config THERMAL_MMIO
+	bool
+	prompt "mmio based thermal driver"
+	help
+	  This options provides generic thermal driver
+	  that will only use memory mapped reads to
+	  get the temperature.
+	  Any system that allows temperature reading by
+	  single memory map reading, be it register or
+	  shared memory, is a possible candidate to work
+	  with this driver.
+	  This driver is most suitable for cases like these:
+	  * all the setup of thermal HW were done by other
+	    entity (e.g. bootloader)
+	  * the thermal HW management is done by external CPU
+	    (e.g. micro-controller)
+	  * the HW is working out-of-the-box and only report
+	    temperature by simply reading one register
+
 config HISI_THERMAL
 	tristate "Hisilicon thermal driver"
 	depends on ARCH_HISI || COMPILE_TEST
@@ -467,6 +486,24 @@ config GENERIC_ADC_THERMAL
 	  is read via IIO framework and the channel information is provided
 	  to this driver. This driver reports the temperature by reading ADC
 	  channel and converts it to temperature based on lookup table.
+
+config AL_THERMAL_V2
+	bool "Annapurna Labs V2 thermal sensor driver"
+	depends on ARCH_ALPINE
+	depends on OF
+	select AL_HAL
+	help
+	  Enable this to plug the Annapurna Labs V2 thermal sensor driver into the
+	  Linux thermal framework
+
+config AL_THERMAL_V3
+	bool "Annapurna Labs V3 thermal sensor driver"
+	depends on ARCH_ALPINE
+	depends on OF
+	select AL_HAL
+	help
+	  Enable this to plug the Annapurna Labs V3 thermal sensor driver into the
+	  Linux thermal framework
 
 menu "Qualcomm thermal drivers"
 depends on (ARCH_QCOM && OF) || COMPILE_TEST

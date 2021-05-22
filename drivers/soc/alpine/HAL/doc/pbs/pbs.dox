@@ -1,0 +1,93 @@
+/**
+ * @defgroup group_pbs PBS
+ *
+ * @section pbs_overview Overview
+ * The chip includes a group of slow peripherals bus controllers, all grouped
+ * under the Peripheral Bus System (PBS), to provide glueless interface support
+ * for common board components like flash, sensors, power management SMBus and
+ * fans.
+ * The PBS includes the following peripherals controllers:
+ * - NAND Flash controller, built to be used as low-cost boot device using SLC NAND components
+ * - SPI master controller, with bootable SPI Flash support, and multiple chip selects
+ * - Four UART 16550-compliant controllers
+ * - Two I2C master controllers, with one of them implementing the Configuration
+ *   Pre-loader. Both can be used for reading and controlling board peripherals
+ *   such as DIMM SPD, fans etc. SMBus can be implemented on top of the I2C
+ *   Master.
+ * - General purpose I/O controller, enabling each I/O to be input, output, or interrupt.
+ *
+ * @subsection pbs_ov_muio PBS Multi-Use I/Os
+ * Some of the PBS bus controllers have dedicated pins, however most of the pins are Multi-usage I/Os (MUIO), thus enabling flexible usage.
+ * Separate control bits are mapped to each I/O, providing the capability to control each I/O as a standalone pin.
+ * Refer to the specific chip datasheet for further details.
+ *
+ * See al_hal_muio_mux.h
+ *
+ * @subsection pbs_ov_nand NAND Flash Controller
+ * The NAND controller provides the minimal capability needed to be able to
+ * reliably boot from SLC NAND, and to use this Flash for storing images and
+ * updating configurations and system log files.
+ * The following features are supported:
+ * - Asynchronous SDR mode.
+ * - Integrated inline ECC protection with two algorithms: Hamming 1-bit correction and BCH up to 40 bits correction per code-word.
+ * - Indirect BOOT from NAND.
+ * - DMA-based Read/Write page operation to expedite boot process, using I/O DMA engines.
+ *
+ * See al_hal_nand.h
+ *
+ * @subsection pbs_ov_gpio General Purpose I/O
+ * The chip’s General Purpose I/O pins are in groups of 8 pins per group, with
+ * exception of the last group, which may have fewer pins. The actual number of
+ * GPIO pins is chip version specific.
+ * The GPIO pins are multiplexed on the MUIO pins, thus some of them cannot be
+ * used if the MUIO pins are allocated to different functions such as UART.
+ * The GPIO has the ability to generate mask-programmable interrupts based on
+ * the level or transitional value of any of its GPIO lines. The General
+ * Purpose Input Output Interrupt indicates to an interrupt controller that an
+ * interrupt has occurred in one or more of the GPIO lines. The interrupts can
+ * be configured so that they are generated, either on a change in the level,
+ * or on an edge of the GPIO line. The edge and level on which the interrupt
+ * must be generated is programmable The GPIO controller is based on ARM™
+ * prime-cell PL061 specification, and publicly available at
+ * http://infocenter.arm.com/help/topic/com.arm.doc.ddi0190b/DDI0190.pdf
+ *
+ * See al_hal_gpio.h
+ *
+ * @subsection pbs_ov_uart UART
+ * The UART Controller has the following features:
+ * - Transmit and receive FIFO depths of 64 bytes
+ * - Shadow registers to reduce software overhead; also includes a software
+ *   programmable reset
+ * - Auto Flow Control mode, as specified in the 16750 standard
+ * - Loopback mode, which enables greater testing of Modem Control and Auto
+ *   Flow Control features
+ * - Transmitter Holding Register Empty (THRE) interrupt mode
+ * - Functionality based on the 16550 industry standard:
+ * - Programmable character properties, such as:
+ * - Number of data bits per character (5–8)
+ * - Optional parity bit (with odd, even select, or Stick Parity)
+ * - Number of stop bits (1, 1.5, or 2)
+ * - Line break generation and detection
+ * - Prioritized interrupt identification
+ *
+ * See al_hal_uart.h
+ *
+ * @subsection pbs_ov_spi SPI Master Controller
+ * The 4-bit Serial Peripheral Interface (SPI) provides following features:
+ * - SPI master with 4 chip selects (CS). Some of the CS pins can be
+ *   multiplexed on the MUIO. Refer to the chip-specific datasheet.
+ * - First chip-select enables native SPI-Flash support as a boot device.
+ * - Supports SPI Modes 0,1, 2 and 3.
+ * - Baud rate configuration - Enables SPI operation of 12 MHz and up.
+ * - Default Transfer operation mode - EEPROM Read mode (TMOD= 2’b11).
+ * - Memory-mapped Interface to CPU, enabling cacheable read from the processor
+ *   for eXecute-in-Place.
+ *
+ * See al_hal_spi.h
+ *
+ * @subsection pbs_ov_i2c I2C Controller
+ * The I/O fabric integrates two I2C master controllers.
+ *
+ * See al_hal_i2c.h
+ *
+ * @} */

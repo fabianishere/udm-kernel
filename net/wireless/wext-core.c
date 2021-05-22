@@ -921,6 +921,7 @@ static int wireless_process_ioctl(struct net *net, struct iwreq *iwr,
 {
 	struct net_device *dev;
 	iw_handler	handler;
+	struct ifreq *ifr = (struct ifreq *) iwr;
 
 	/* Permissions are already checked in dev_ioctl() before calling us.
 	 * The copy_to/from_user() of ifr is also dealt with in there */
@@ -955,6 +956,10 @@ static int wireless_process_ioctl(struct net *net, struct iwreq *iwr,
 		else if (private)
 			return private(dev, iwr, cmd, info, handler);
 	}
+
+	if (dev->netdev_ops->ndo_do_ioctl)
+		return dev->netdev_ops->ndo_do_ioctl(dev, ifr, cmd);
+
 	return -EOPNOTSUPP;
 }
 

@@ -45,6 +45,172 @@ static void disk_add_events(struct gendisk *disk);
 static void disk_del_events(struct gendisk *disk);
 static void disk_release_events(struct gendisk *disk);
 
+static LIST_HEAD(disk_hook_list);
+static DEFINE_MUTEX(disk_hook_lock);
+
+struct disk_event_hook {
+	gendisk_callback cb;
+	void *priv;
+};
+
+struct disk_hook_entry {
+	struct disk_event_hook hooks[DISK_EVENT_COUNT];
+	struct list_head list;
+};
+
+static void gendisk_event_hook_call(struct gendisk *disk, unsigned disk_event)
+{
+	struct disk_part_iter piter;
+	struct disk_hook_entry *entry;
+	struct hd_struct *part;
+
+	if (get_capacity(disk) == 0) {
+		return;
+	}
+
+	mutex_lock(&disk_hook_lock);
+	disk_part_iter_init(&piter, disk, DISK_PITER_INCL_PART0);
+	while ((part = disk_part_iter_next(&piter))) {
+		list_for_each_entry (entry, &disk_hook_list, list) {
+			if (entry->hooks[disk_event].cb) {
+				entry->hooks[disk_event].cb(disk, part,
+							    entry->hooks[disk_event].priv);
+				break;
+			}
+		}
+	}
+	disk_part_iter_exit(&piter);
+	mutex_unlock(&disk_hook_lock);
+}
+
+void gendisk_callback_for_each(gendisk_callback cb, void *priv)
+{
+	struct gendisk *disk = NULL;
+	struct class_dev_iter iter;
+	struct device *dev;
+	struct disk_part_iter piter;
+	struct hd_struct *part;
+
+	if(NULL == cb) {
+		WARN(1, "%s : cb can't be null\n", __func__);
+		return;
+	}
+
+	class_dev_iter_init(&iter, &block_class, NULL, &disk_type);
+	while ((dev = class_dev_iter_next(&iter))) {
+		disk = dev_to_disk(dev);
+
+		if (get_capacity(disk) == 0)
+			continue;
+
+		disk_part_iter_init(&piter, disk, DISK_PITER_INCL_PART0);
+		while ((part = disk_part_iter_next(&piter))) {
+			cb(disk, part, priv);
+		}
+		disk_part_iter_exit(&piter);
+	}
+	class_dev_iter_exit(&iter);
+}
+EXPORT_SYMBOL(gendisk_callback_for_each);
+
+int gendisk_event_hook_reg(gendisk_callback cb, void *priv, unsigned disk_event)
+{
+	struct disk_hook_entry *entry;
+
+	if(NULL == cb) {
+		WARN(1, "%s : cb can't be null\n", __func__);
+		return -EINVAL;
+	}
+
+
+	if (disk_event >= DISK_EVENT_COUNT) {
+		WARN(1, "%s : unknowm disk event\n", __func__);
+		return -EINVAL;
+	}
+
+	mutex_lock(&disk_hook_lock);
+	list_for_each_entry (entry, &disk_hook_list, list) {
+		if (entry->hooks[disk_event].cb == cb) {
+			/* Update private */
+			entry->hooks[disk_event].priv = priv;
+			mutex_unlock(&disk_hook_lock);
+			return 0;
+		}
+	}
+
+	/* Add new hook */
+	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+	if (NULL == entry) {
+		mutex_unlock(&disk_hook_lock);
+		return -ENOMEM;
+	}
+
+	INIT_LIST_HEAD(&entry->list);
+	list_add_tail(&entry->list, &disk_hook_list);
+	entry->hooks[disk_event].cb = cb;
+	entry->hooks[disk_event].priv = priv;
+	mutex_unlock(&disk_hook_lock);
+	return 0;
+}
+EXPORT_SYMBOL(gendisk_event_hook_reg);
+
+void gendisk_event_hook_unreg(gendisk_callback cb, unsigned disk_event)
+{
+	struct disk_hook_entry *entry, *entry_temp;
+
+	if(NULL == cb) {
+		WARN(1, "%s : cb can't be null\n", __func__);
+		return;
+	}
+
+	if (disk_event >= DISK_EVENT_COUNT) {
+		WARN(1, "%s : unknowm disk event\n", __func__);
+		return;
+	}
+
+	mutex_lock(&disk_hook_lock);
+	list_for_each_entry_safe (entry, entry_temp, &disk_hook_list, list) {
+		if (entry->hooks[disk_event].cb == cb) {
+			list_del(&entry->list);
+			kfree(entry);
+			goto found;
+		}
+	}
+	printk("%s: event hook has not been found.\n", __func__);
+found:
+	mutex_unlock(&disk_hook_lock);
+}
+EXPORT_SYMBOL(gendisk_event_hook_unreg);
+
+void ubnt_set_disk_ro(struct gendisk *disk, int flag)
+{
+	if (NULL == disk) {
+		WARN(1, "%s : disk can't be null\n", __func__);
+		return;
+	}
+
+	disk->ubnt_readonly = flag;
+	set_disk_ro(disk, flag);
+}
+EXPORT_SYMBOL(ubnt_set_disk_ro);
+
+void ubnt_set_part_ro(struct gendisk *disk, int partno, int flag)
+{
+	struct hd_struct *part = disk_get_part(disk, partno);
+
+	if (NULL == part) {
+		WARN(1, "%s : part can't be null\n", __func__);
+		return;
+	}
+
+	part->ubnt_readonly = flag;
+	part->policy = flag;
+	disk_put_part(part);
+
+	return;
+}
+EXPORT_SYMBOL(ubnt_set_part_ro);
+
 void part_inc_in_flight(struct request_queue *q, struct hd_struct *part, int rw)
 {
 	if (q->mq_ops)
@@ -721,6 +887,8 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 	WARN_ON_ONCE(!blk_get_queue(disk->queue));
 
 	disk_add_events(disk);
+
+	gendisk_event_hook_call(disk, DISK_EVENT_ADD);
 	blk_integrity_add(disk);
 }
 
@@ -1068,6 +1236,7 @@ static int __init genhd_device_init(void)
 	bdev_map = kobj_map_init(base_probe, &block_class_lock);
 	blk_dev_init();
 
+	INIT_LIST_HEAD(&disk_hook_list);
 	register_blkdev(BLOCK_EXT_MAJOR, "blkext");
 
 	/* create top-level block dir */
@@ -1540,15 +1709,21 @@ static void set_disk_ro_uevent(struct gendisk *gd, int ro)
 
 void set_device_ro(struct block_device *bdev, int flag)
 {
-	bdev->bd_part->policy = flag;
+	struct hd_struct *part = bdev->bd_part;
+
+	if(part->ubnt_readonly) {
+		flag = part->ubnt_readonly;
+	}
+	part->policy = flag;
 }
 
 EXPORT_SYMBOL(set_device_ro);
 
-void set_disk_ro(struct gendisk *disk, int flag)
+void set_disk_ro(struct gendisk *disk, int flag_in)
 {
 	struct disk_part_iter piter;
 	struct hd_struct *part;
+	int flag = (disk->ubnt_readonly) ? disk->ubnt_readonly : flag_in;
 
 	if (disk->part0.policy != flag) {
 		set_disk_ro_uevent(disk, flag);
@@ -1557,7 +1732,7 @@ void set_disk_ro(struct gendisk *disk, int flag)
 
 	disk_part_iter_init(&piter, disk, DISK_PITER_INCL_EMPTY);
 	while ((part = disk_part_iter_next(&piter)))
-		part->policy = flag;
+		part->policy = (part->ubnt_readonly) ? part->ubnt_readonly : flag_in;
 	disk_part_iter_exit(&piter);
 }
 
@@ -1677,6 +1852,7 @@ void disk_block_events(struct gendisk *disk)
 
 	mutex_unlock(&ev->block_mutex);
 }
+EXPORT_SYMBOL(disk_block_events);
 
 static void __disk_unblock_events(struct gendisk *disk, bool check_now)
 {
@@ -1718,6 +1894,7 @@ void disk_unblock_events(struct gendisk *disk)
 	if (disk->ev)
 		__disk_unblock_events(disk, false);
 }
+EXPORT_SYMBOL(disk_unblock_events);
 
 /**
  * disk_flush_events - schedule immediate event checking and flushing

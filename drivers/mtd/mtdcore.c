@@ -230,6 +230,17 @@ static ssize_t mtd_numeraseregions_show(struct device *dev,
 static DEVICE_ATTR(numeraseregions, S_IRUGO, mtd_numeraseregions_show,
 	NULL);
 
+static ssize_t mtd_jedec_id_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct mtd_info *mtd = dev_get_drvdata(dev);
+
+	return snprintf(buf, PAGE_SIZE, "%06x\n", mtd->jedec_id);
+
+}
+
+static DEVICE_ATTR(jedec_id, S_IRUGO, mtd_jedec_id_show, NULL);
+
 static ssize_t mtd_name_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -338,6 +349,7 @@ static struct attribute *mtd_attrs[] = {
 	&dev_attr_oobsize.attr,
 	&dev_attr_oobavail.attr,
 	&dev_attr_numeraseregions.attr,
+	&dev_attr_jedec_id.attr,
 	&dev_attr_name.attr,
 	&dev_attr_ecc_strength.attr,
 	&dev_attr_ecc_step_size.attr,
@@ -1829,6 +1841,19 @@ void *mtd_kmalloc_up_to(const struct mtd_info *mtd, size_t *size)
 	return kmalloc(*size, GFP_KERNEL);
 }
 EXPORT_SYMBOL_GPL(mtd_kmalloc_up_to);
+
+void mtd_callback_for_each(mtd_callback cb, void *priv) {
+
+	struct mtd_info *mtd;
+	if(cb) {
+		mutex_lock(&mtd_table_mutex);
+		mtd_for_each_device(mtd) {
+			cb(mtd, priv);
+		}
+		mutex_unlock(&mtd_table_mutex);
+	}
+}
+EXPORT_SYMBOL(mtd_callback_for_each);
 
 #ifdef CONFIG_PROC_FS
 

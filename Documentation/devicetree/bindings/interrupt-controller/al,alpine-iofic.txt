@@ -1,0 +1,27 @@
+Alpine IOFIC interrupt controller
+
+This interrupt controller hardware is a second level interrupt controller that
+is hooked to a parent interrupt controller: e.g: ARM GIC for ARM-based
+platforms.
+
+Required properties:
+
+- compatible: should be "al,alpine-iofic"
+- reg: physical base address and size of the registers
+- interrupt-controller: identifies the node as an interrupt controller
+- interrupt-parent: specifies the parent interrupt controller.
+- interrupts-in: number of interrupts connected to this iofic
+- interrupt-parent: the phandle to the parent interrupt controller
+
+Example:
+
+	pbs_iofic: pbs_iofic {
+		#interrupt-cells = <1>;
+		compatible = "al,alpine-iofic";
+		reg = <0x0 0xfd8a8500 0x0 0x100000>;
+		interrupt-controller;
+		interrupts-in = <27>;
+		interrupts = <0x0 0x0 0x4>;
+		interrupt-parent = <&gic_main>;
+	};
+

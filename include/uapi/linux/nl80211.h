@@ -2682,6 +2682,9 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_HE_CAPABILITY,
 
+	/* NOTE: Make sure this is in sync with hostap's nl80211_copy.h */
+	NL80211_ATTR_STA_ROAMED = 277,
+
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,

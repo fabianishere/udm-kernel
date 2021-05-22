@@ -19,6 +19,8 @@
  */
 static const struct pci_device_id pci_pf_stub_whitelist[] = {
 	{ PCI_VDEVICE(AMAZON, 0x0053) },
+	{ PCI_VDEVICE(ANNAPURNA_LABS, PCI_DEVICE_ID_AL_SSM) },
+	{ PCI_VDEVICE(ANNAPURNA_LABS, PCI_DEVICE_ID_AL_SSM_VF) },
 	/* required last entry */
 	{ 0 }
 };

@@ -1,0 +1,82 @@
+/**
+ * @defgroup group_sys_services System Services
+ *
+ * @section sys_services_overview Overview
+ * A variety of system services required by a processor subsystem for normal
+ * operation with standard operating systems.
+ * These services are typically slow, not latency-sensitive, and are accessed
+ * infrequently. Thus they are grouped under a single slave agent on the I/O
+ * Fabric.
+ * - System timers
+ * - Watchdog timers
+ * - On-Die thermal sensor
+ * - One time programmable memory (OTP)
+ *
+ * @subsection sys_services_overview_system_timers System timers
+ * The chip integrates multiple Dual-Timer Modules, based on ARM PrimeCell
+ * SP804 - one Dual-Timer Module per CPU Core. These modules reside in the I/O
+ * Fabric and their registers can be accessed via the I/O Fabric internal
+ * registers PASW.  The modules consist of two programmable 32/16-bit down
+ * counters that can generate interrupts on reaching zero. A timer can be
+ * programmed for a 32-bit or 16-bit counter size and one of three timer
+ * modes—Free running, Periodic, and One-shot—using the Control register.  The
+ * Dual-Timer Module provides access to two interrupt-generating programmable
+ * 32-bit decrementing Free-Running Counters (FRCs). The FRCs operate from a
+ * common timer clock, which is connected to the I/O Fabric clock. Each FRC
+ * also has a prescaler that can divide down the counter clock rate by 1, 16,
+ * or 256. This enables the count rate for each FRC to be controlled
+ * independently, using its individual clock prescaler control bits.
+
+ * See al_hal_timer.h
+ *
+ * @subsection sys_services_overview_watchdog_timers Watchdog timers
+ * The chip integrates multiple Watchdog modules, based on ARM PrimeCell SP805
+ * - one per CPU Core. These modules reside in the PBS slave agent off the I/O
+ * Fabric and their registers can be accessed via the I/O Fabric internal
+ * registers Physical Address Slave Window (PASW).
+ * The Watchdog module is based on a 32-bit down counter that is initialized
+ * from the Reload register, WdogLoad. The Watchdog clock generates a regular
+ * interrupt, WDOGINT, depending on a programmed value. The counter decrements
+ * by one on each positive clock edge of I/O Fabric clock.  The Watchdog
+ * monitors the interrupt and asserts a WDOGRES signal when the counter reaches
+ * zero and the counter is stopped. On the next I/O Fabric clock edge, the
+ * counter is reloaded from the WdogLoad register and the countdown sequence
+ * continues. If the interrupt is not cleared by the time the counter next
+ * reaches zero, then the Watchdog module asserts the reset signal. The
+ * Watchdog module is intended to be used to apply a reset to a system in the
+ * event of a software failure, providing a way of recovering from software
+ * crashes. The Watchdog unit can be enabled or disabled as required
+ * An expiring watchdog can trigger an external pin called RESET0_N, which can
+ * be used to drive an interrupt or a reset.  The chip’s RESET0_N output port
+ * is asserted whenever the Watchdog interrupt(s) are asserted and configured
+ * to set the RESET0_N.
+ *
+ * See al_hal_watchdog.h
+ *
+ * @subsection sys_services_overview_thermal_sensor Thermal sensor
+ * The SoC includes an on-die temperature sensor, located at the I/O Fabric. It
+ * is accessible and initiated by software, and provides a temperature
+ * measurement result as well as indications for crossing a high or low
+ * thresholds. Since this procedure takes about 16 mSec, polling on busy status
+ * as well as end-of-sequence interrupts are available.
+
+ * See al_hal_thermal_sensor.h
+ *
+ * @subsection sys_services_overview_otp One time programmable memory (OTP)
+ * The One Time Programmable Memory (OTPM) provides the necessary information
+ * for Secure Boot, e.g., Secure Boot enforcement, secure key, etc. The OTPM
+ * also provides manufacturing information such as memory redundancy, as well
+ * as the software revision ID, etc. For further information, see the reference
+ * manual boot architecture chapter. The OTP module resides in the I/O Fabric;
+ * its registers can be accessed via the I/O Fabric internal registers PASW. A
+ * 128-byte address space is allocated for the OTPM. . Once software accesses
+ * the OTPM, the otpm_bsy status bit is set to 1 and it is cleared when the
+ * operation is completed. Software must confirm that OTPM is idle (otpm_bsy =
+ * 0) before any accessing the OTP memory. Word[31] is used to indicate which
+ * entry in the OTPM is valid. After software programs Word [n] in the array,
+ * it must set bit [n] in Word [31]. When bit[n] in Word[31] is set, the OTPMW
+ * ignores any attempt to write to Word[n].
+ *
+ * See al_hal_otp.h
+ *
+ * @} */

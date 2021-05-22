@@ -240,7 +240,7 @@ struct edac_device_ctl_info {
  */
 extern struct edac_device_ctl_info *edac_device_alloc_ctl_info(
 		unsigned sizeof_private,
-		char *edac_device_name, unsigned nr_instances,
+		const char *edac_device_name, unsigned nr_instances,
 		char *edac_block_name, unsigned nr_blocks,
 		unsigned offset_value,
 		struct edac_dev_sysfs_block_attribute *block_attributes,

@@ -29,6 +29,13 @@
 #include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/watchdog.h>
+#include <linux/interrupt.h>
+#include <linux/irq.h>
+#include <linux/of_irq.h>
+
+#if defined(CONFIG_UBNT_REBOOT_REASON)
+#include <linux/resvmem_reboot.h>
+#endif
 
 /* default timeout in seconds */
 #define DEFAULT_TIMEOUT		60
@@ -71,6 +78,8 @@ struct sp805_wdt {
 	u64				rate;
 	struct amba_device		*adev;
 	unsigned int			load_val;
+	int				irq;
+	bool				ris_status;
 };
 
 static bool nowayout = WATCHDOG_NOWAYOUT;
@@ -152,6 +161,7 @@ static int wdt_config(struct watchdog_device *wdd, bool ping)
 {
 	struct sp805_wdt *wdt = watchdog_get_drvdata(wdd);
 	int ret;
+	bool status;
 
 	if (!ping) {
 
@@ -176,7 +186,14 @@ static int wdt_config(struct watchdog_device *wdd, bool ping)
 
 	/* Flush posted writes. */
 	readl_relaxed(wdt->base + WDTLOCK);
+
+	status = wdt->ris_status;
+	wdt->ris_status = false;
 	spin_unlock(&wdt->lock);
+
+	if (status) {
+		pr_crit("Watchdog reboot averted\n");
+	}
 
 	return 0;
 }
@@ -227,11 +244,29 @@ static const struct watchdog_ops wdt_ops = {
 	.restart	= wdt_restart,
 };
 
+static irqreturn_t sp805_wdt_interrupt(int irq, void *dev_id)
+{
+	struct sp805_wdt *wdt = (struct sp805_wdt *)dev_id;
+	bool status = readl_relaxed(wdt->base + WDTRIS) & INT_MASK;
+	if(status && (wdt->ris_status != status)) {
+		pr_crit("Watchdog is about to reboot system\n");
+		wdt->ris_status = true;
+#if defined(CONFIG_UBNT_REBOOT_REASON)
+		resvmem_set_reboot_reason(RESVMEM_REBOOT_WATCHDOG);
+#endif
+	} else if(!status) {
+		pr_crit("Watchdog reboot averted\n");
+		wdt->ris_status = false;
+	}
+
+	return IRQ_HANDLED;
+}
+
 static int
 sp805_wdt_probe(struct amba_device *adev, const struct amba_id *id)
 {
 	struct sp805_wdt *wdt;
-	int ret = 0;
+	int irq, ret = 0;
 
 	wdt = devm_kzalloc(&adev->dev, sizeof(*wdt), GFP_KERNEL);
 	if (!wdt) {
@@ -299,6 +334,20 @@ sp805_wdt_probe(struct amba_device *adev, const struct amba_id *id)
 	}
 	amba_set_drvdata(adev, wdt);
 
+	irq = irq_of_parse_and_map(adev->dev.of_node, 0);
+	if (irq <= 0) {
+		dev_err(&adev->dev, "sp805 failed to get IRQ\n");
+		goto err;
+	}
+	wdt->irq = irq;
+
+	wdt->ris_status = false;
+	ret = request_irq(irq, sp805_wdt_interrupt, 0, "sp805_wis", wdt);
+	if (ret) {
+		dev_err(&adev->dev, "sp805 IRQ %d request fail\n", irq);
+		goto err;
+	}
+
 	dev_info(&adev->dev, "registration successful\n");
 	return 0;
 
@@ -313,6 +362,7 @@ static int sp805_wdt_remove(struct amba_device *adev)
 
 	watchdog_unregister_device(&wdt->wdd);
 	watchdog_set_drvdata(&wdt->wdd, NULL);
+	free_irq(wdt->irq, wdt);
 
 	return 0;
 }

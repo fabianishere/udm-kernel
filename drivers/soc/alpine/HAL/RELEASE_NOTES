@@ -1,0 +1,397 @@
+========================================================================
+Annapurna Labs Hardware Abstraction Layer Release Notes
+========================================================================
+
+-------------------------------------------------------------------
+Version 2.9 known issues:
+-------------------------------------------------------------------
+* This is the 9th release to customers, and has most of the functionality
+  implemented that has passed engineering validation cycle.
+* It is not yet optimized for performance and further optimizations is expected
+  in coming releases
+* While HAL is generic and should be independent of board and operating system,
+  we would like to caution the use that in this release, this was tested on
+  Alpine V1 development board and running under Linux 3.10 kernel
+
+-------------------------------------------------------------------
+Changes between version 2.9 and version 2.8:
+-------------------------------------------------------------------
+Alpine V1
+------
+- DDR
+  * Various fixes related to the BIST mechanism
+- SPI
+  * Read/Write performance optimization
+
+Alpine V2
+--------
+- Ethernet
+  * Added 25G & 50G modes
+  * Various fixes related to 25G, 40G, and 50G modes
+  * Various fixed related to improved CRC
+- PCIe
+  * Added multi-PF support
+  * Added advanced address mapping support
+- PCIe logging
+  * Various bug fixes
+- SSM Crypto
+  * Added quad SA support for SHA3 broken packets
+- TDM
+  * New HAL
+- DDR
+  * Added x4/x16 support
+  * Fixed queue depth for alpine_v2
+  * Opened high priority reads paths
+  * Updated DDR BIST function for alpine_v2
+SerDes
+  * Fix wrong init configuration when configuring SerDes Group C to be PCIe_C
+
+-------------------------------------------------------------------
+Changes between version 2.8 and version 2.7:
+-------------------------------------------------------------------
+DDR Alpine V2 support:
+- Initial support
+- DDR4 support
+- Power management support:
+
+Ethernet Alpine V2 support:
+- Improved CRC
+- Inline crypto
+
+PCIe Alpine V2 support:
+- Fixed register structures for all revisions
+- Fixed functionality of 'inbound header credits and outstanding outbound reads
+  completion header configuration' for revision 3 (Alpine V2 x8)
+
+PCIe Logging Alpine V2 support
+
+UDMA Alpine V2 support:
+- Added support for controlling Tx/Rx queue advanced TGTID configuration & Rx
+  queue split header buffer 2 configuration
+
+-------------------------------------------------------------------
+Changes between version 2.7 and version 2.6:
+-------------------------------------------------------------------
+New HALs:
+- CPU to JTAG + DRO reading sequence
+- CCU performance unit
+- Unit Adapter
+
+ETH:
+- add 2 new functions to get eth_control statistics (counters). the functions are implemented like mac_stats_get do
+- add api for configuring header split
+- add API for updating single entry of the rx parser table
+- add board params for direct attached cable
+- add board params for retimer
+- add description for mac stats fields
+- add filter based on parser result to the filter options
+- add FSM table bits
+- add header split len field to the control table
+- add helper function that does flr with restore board params
+- adding new function to config tx vlan table (similar to al_eth_fwd_vid_table_set)
+- add rx l3 offset to al_eth_pkt
+- add sample code for initializing rx flow steering
+- add support for new MACs(XLG_LL_40G and new version of 10G_KR)
+- extend al_eth_rx_desc_config() - add more options that controls the rx desc meta data selection such as: - l4 offset - l3/l4 protocol index - frag indication
+- use udma mask and queue index as inputs al_eth_thash_table_set() instead of raw data
+- apply more udma configurations by default 1. s2m max descs 2. completion descs burst 3. rx desc coalescing
+- asserted timemstamp tx cmpl bypass register, to avoid using unverified flow
+- adding rx_fifo busy as condition to not entering eee_mode, since pause_packets aren't sent while tx transmitting Low Power Idles
+- fixing typo in tx packet prepare
+- change default rx meta data selection to be outer
+- cleanup incorrect comment
+- disable padding removal of received frames.
+- EC regs: updated ETH RAM enabling field
+- enable LEDs on link with retimer
+- enable symmetric hash
+- extra useful printings under al_dump_tx_pkt (ptp, tunnel_mode, outer_l3_proto, outer_l3_len, outer_l3_offset)
+- fix al_eth_ec_mac_ints_config (interrupts config)
+- fix assert in rx flow to allow descriptors number to be equal to AL_ETH_PKT_MAX_BUFS
+- fix comment in rx_pkt_limit_config
+- fix compilation warning
+- fix compilation warning about uninitialized variable in flr_restore_params
+- fixed pfc usage of prio_q_map, to use all priorities instead of 0 only
+- fix ethernet LEDs indication
+- link management: add retimer support
+- move code that configs single entry of parset into function
+- provide all MAC statistic counters
+- removed XAUI/RXAUI support
+- set minimum size of eth frame to reasonable value (64-crc)
+- set the rx split header len
+- support overriding AL_ETH_PKT_MAX_BUFS
+- updating link_status: adding auto negotiation as condition to SGMII-link_up, adding RGMII-link_up, added print of port_mode
+- use TC macro for table size instead of DSCP one
+- fix some addresses under al_eth_mac_stats_get
+- LM: hard reset to serdes only in case of link training failures
+
+PCIe:
+- add API for checking whether cfg emul feature enabled
+- added missing EOL
+- Added preliminary support for the new x8 core
+- add API to configure axi IO bar.
+- add option for ATU response code
+- AER capability support
+- Get Revision ID from PBS register file
+- removed 'support_32b_address_in_iov' from 'al_PCIe_ep_iov_params'
+- Fix en/dis of writes to RO config space
+- Change max payload size and max read request size to 256 bytes
+- fix compilation issue
+- Gen3 EQ Control Register: changed preset request vector to request 9
+- interrupts [API Change]: Added definitions and functions for supporting the PCIe APP group B and PCIe AXI interrupt controllers
+- update al_PCIe_port_axi_parity_int_config
+- Update EP-IOV parameters documentation
+- use pointer to regs instead of reg struct as preparation for PCIe x8
+
+UDMA:
+- add al_udma_s2m_no_desc_cfg_set() API function
+- add APIs for configurations that improves performance
+- add macro for buffer 2 used bit in the rx desc
+- always call q_config_compl so it will clear the completion update
+- missing value to shift
+- use UDMA_M2S_RD_DESC_PREF_CFG_3_MIN_BURST_ABOVE_THR_MASK instead of UDMA_S2M_RD_DESC_PREF_CFG_3_MIN_BURST_BELOW_THR_MASK
+- disable rx pkt promotion feature
+- interrupt controller [API Change]: Added support for secondary interrupt controller, including all secondary interrupt controller bits
+- message IPC [Bug Fix]: Fixing a bug in last_block indication
+- remove pkt promotion feature as it's not supported
+- use volatile for completion descriptors
+
+DDR:
+- added memory barrier after taking ddr controller out of reset so the next read/write from controller will not happen before reset is deasserted
+- Added support for disabled DDR PHY (e.g. on Emulator)
+- Added support for address map ECO (swapping addr[16:14] with addr[19:17])
+- add missing register read when printing bist registers
+- fixed problem with calibration halting when using no ECC DIMM
+- Removed unneeded write to update refresh level
+- Renamed EMR register to mr (as in DDR3 spec)
+- update DRAM BIST function: use more robust BIST protocol, add detailed BIST return status struct to BIST function
+
+Crypto:
+- Added SHA3 support
+- Add support for XTS (Not relevant for Alpine V1)
+- Remove CCM IV from SA as it isnt used by the design
+
+Bug Fixes:
+- bootstrap: Fix SB PLL freq parsing
+
+sys_fabric:
+- added CPU & L2 error syndrome get/set functions
+
+IOFIC:
+- Added support for tgtid per interrupt for MSIX mode, and added API for triggering interrupts that are moderated
+
+PCIe Logging:
+- Add support for Send Event interrupts
+- Add support for write strobes
+- Updated API for Alpine V2
+
+SerDes:
+- Updated Alpine V2 support
+- PCIe gen 3: Addition for better Rx equalization
+
+SSM:
+- replacing obsolete misc_tgtid with src_tgtid and dst_tgtid
+
+Thermal Sensor:
+- updated temperature readout coefficients
+
+-------------------------------------------------------------------
+Changes between version 2.6 and version 2.5:
+-------------------------------------------------------------------
+Added Alpine V2 support for the following HALs:
+* Bootstrap
+* MUIO Mux
+* SerDes
+
+New HALs:
+* SGPO - Serial General Purpose Output (Alpine V2)
+* SSM - Storage, Security, and Memory - Unified Crypto/RAID (Alpine V2)
+* Fast UDMA - higher performance UDMA HAL for repeatative operations
+
+Changes & Bug fixes:
+* Ethernet
+  - Revised and improved link management
+* PCIe
+  - Various fixes and additions for multi-VF support
+* DDR
+  - Added dual DIMM support
+* PCIe Logging
+  - Added support for handling HW that is not after reset
+  - Moved write FIFO management into HAL
+  - Disabled A0 logging fix by default
+* PLL
+  - Added support for non integer division of the PLL frequency
+* SerDes
+  - Removed USB & XAUI support
+* Address Mapping
+  - Added support for getting PASW base address and size
+  - Added SB2NB remapping support
+
+-------------------------------------------------------------------
+Changes between version 2.5 and version 2.4:
+-------------------------------------------------------------------
+New features:
+* Crypto
+  - Changed the max number of descriptors supported by the HW
+
+* DDR
+  - Added eye centering results to the service for getting the PHY training
+    results
+  - Added service for getting which byte lanes are active
+  - Resetting the PHY before starting initialization since clock is changed
+    during PHY init process
+
+* Eth
+  - Added missing fields on mac table control parsing
+  - Added support for configurable MDIO clock frequency
+  - Increased max packet size in the m2s to 1M
+
+* PCIe
+  - Enabled support for 64-bit BARs
+
+* SerDes
+  - Added services for switching entire SerDes group to KR or SGMII mode based
+    on 156.25 Mhz reference clock
+  - Added support for SerDes HW equalization test
+  - Added tx_advanced_params_set/get support
+  - Added support for polarity inverted Tx/Rx lanes
+
+Bug fixes:
+* Eth
+  - Changed FLR sequence for SGMII case
+
+* PCIe
+  - Fixed wrong asignment of IATU limit extended register
+  - Set link capability register as well as link control register 2 according to
+    max_speed
+
+* PCIe logging
+  - Fixed FIFO size configuration - The maximum allowed FIFO size is 1MB but the
+    HAL allows creating a much
+
+-------------------------------------------------------------------
+Changes between version 2.4 and version 2.3:
+-------------------------------------------------------------------
+New features:
+* Ethernet
+  - Added EEE support
+  - Enable SFP LEDs
+
+* Crypto
+  - Added memcpy support
+
+* SerDes
+  - Added support for SATA spread spectrum clock
+  - Added eye diagram single sampling functionality
+  - Added tx/rx advanced parameters setting support
+  - Added support for powered off SerDes group, with L2R/R2L clock bypass
+
+* DDR
+  - Added service for getting the PHY training results
+  - Updated read ODT delay configuration for A0
+
+* Bootstrap
+  - Added support for I2C preloader address field
+
+* Unit Adapter
+  - Added function level reset to the adapter hal
+
+* IOFIC
+  - Added 'read mask register' and 'set cause register' services
+
+* PCIe Logging
+  - Updated window size config for A0
+  - Added support for new modes for A0
+
+* UART
+  - Added UART HAL
+
+* IOMMU
+  - Added API to clear fault status and interrupt
+  - Added API to read fault status
+  - Added TLB invalidate support (using registers)
+  - Changed default behavior to terminate fault transactions with abort and
+    allow Hit-under-Miss
+  - Associate context bank with TGTID
+
+Bug fixes:
+* N/A
+
+-------------------------------------------------------------------
+Changes between version 2.3 and version 2.1:
+-------------------------------------------------------------------
+New features:
+* Ethernet
+  - Added 10G Serial Link over Direct-Attached cable auto-negotiation and link
+    training support
+  - Added support for SGMII 10/100.
+  - Implemented link status get for 10G interface
+* SerDes
+  - Added 10G Serial Link over Direct-Attached cable auto-negotiation and link
+    training support
+  - Added support for powered off SerDes group
+  - Added support for powered off SerDes group specific lanes
+  - Added support for SGMII with 100Mhz reference clock
+  - Added signal detect service
+  - Split init from services
+* IOMMU
+  - Added IOMMU HAL
+* PCIe
+  - Added port disable support
+  - Added support for port memory shutdown/up
+* UDMA
+  - Changed register write in al_udma_desc_action_add to be relaxed
+  - Removed unneeded data memory barrier from cdesc_ack
+  - Added API for configuring the max descriptors per packet for the M2S udma
+* DDR
+  - Added dual rank DIMM support
+  - Added API functions to handle parity errors
+  - Added DDR PMU support
+  - Split init from services
+* I2C
+  - Added support for slave mode
+* Bootstrap
+  - Added support for 100Mhz reference clock
+* Crypto
+  - Added support for msb chop signature
+* IOFIC
+  - Changed register write in al_iofic_unmask to be relaxed
+* PCIe logging
+  - Added full support for legacy mode in A0
+* PLL
+  - Added support for 100MHz reference clock
+* RAID
+  - Increased number of src buffers up to 20
+
+Bug fixes:
+* Ethernet
+  - Fixed link status get function for SGMII
+  - MACSEC: Added support for MACSEC real-time re-keying (aka hot-swap)
+  - Fixed writing the led configuration register
+* PLL
+  - Fixed test mode sequence
+
+-------------------------------------------------------------------
+Changes between version 2.1 and version 2.0:
+-------------------------------------------------------------------
+New features:
+* Added runtime detection of chip revision id (M0 / A0)
+* Ethernet HAL new features for A0:
+  - Added support for sending MSS value in the discriptor
+  - Added TSO with tunneling support
+  - Added wake on lan (WOL) support
+  - Added macsec to eth hal
+  - Added PTP support
+* Added Message Based IPC support for A0
+* PCIe HAL new features for A0:
+  - 40 bit ATU region size
+  - Config space emulation
+* Added support for EP I/O virtualization for A0
+* DDR
+  - Added ECC data poisoning support
+  - Added support for DDR self refresh and powerdown modes
+* Added CMOS HAL for A0
+* Added OTP HAL
+
+Bug fixes:
+* N/A
+

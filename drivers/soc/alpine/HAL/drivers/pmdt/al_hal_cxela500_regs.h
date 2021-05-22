@@ -1,0 +1,408 @@
+/*******************************************************************************
+Copyright (C) 2016 Annapurna Labs Ltd.
+
+This file may be licensed under the terms of the Annapurna Labs Commercial
+License Agreement.
+
+Alternatively, this file can be distributed under the terms of the GNU General
+Public License V2 as published by the Free Software Foundation and can be
+found at http://www.gnu.org/licenses/gpl-2.0.html
+
+Alternatively, redistribution and use in source and binary forms, with or
+without modification, are permitted provided that the following conditions are
+met:
+
+    *     Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+
+    *     Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in
+the documentation and/or other materials provided with the
+distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+*******************************************************************************/
+
+/**
+ *  @{
+ * @file   al_hal_cxela500_regs.h
+ *
+ * @brief CXELA500 registers
+ *
+ */
+
+#ifndef __AL_HAL_CXELA500_REGS_H__
+#define __AL_HAL_CXELA500_REGS_H__
+
+#include "al_hal_plat_types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*
+ * Unit Registers
+ */
+struct al_cxela500_control {
+	/* [0x0] */
+	uint32_t ctrl;
+	/* [0x4] */
+	uint32_t timectrl;
+	/* [0x8] */
+	uint32_t tssr;
+	/* [0xC] */
+	uint32_t rsrvd_0;
+	/* [0x10] */
+	uint32_t ptaction;
+	/* [0x14] */
+	uint32_t rsrvd_1[3];
+};
+
+struct al_cxela500_cur_state {
+	/* [0x0] */
+	uint32_t ctsr;
+	/* [0x4] */
+	uint32_t ccvr;
+	/* [0x8] */
+	uint32_t cavr;
+	/* [0xC] */
+	uint32_t rdcaptid;
+	/* [0x10] */
+	uint32_t rsrvd_0[4];
+};
+
+struct al_cxela500_ram {
+	/* [0x0] */
+	uint32_t rrar;
+	/* [0x4] */
+	uint32_t rrdr;
+	/* [0x8] */
+	uint32_t rwar;
+	/* [0xC] */
+	uint32_t rwdr;
+};
+
+struct al_cxela500_trig_state {
+	/* [0x0] */
+	uint32_t sigsel;
+	/* [0x4] */
+	uint32_t trigctrl;
+	/* [0x8] */
+	uint32_t nextstate;
+	/* [0xC] */
+	uint32_t action;
+	/* [0x10] */
+	uint32_t altnextstate;
+	/* [0x14] */
+	uint32_t altaction;
+	/* [0x18] */
+	uint32_t rsrvd_0[2];
+	/* [0x20] */
+	uint32_t countcomp;
+	/* [0x24] */
+	uint32_t rsrvd_1[3];
+	/* [0x30] */
+	uint32_t extmask;
+	/* [0x34] */
+	uint32_t extcomp;
+	/* [0x38] */
+	uint32_t rsrvd_2[2];
+	/* [0x40] */
+	uint32_t sigmask[4];
+	/* [0x50] */
+	uint32_t rsrvd_3[12];
+	/* [0x80] */
+	uint32_t sigcomp[4];
+	/* [0x90] */
+	uint32_t rsrvd_4[28];
+};
+
+struct al_cxela500_intg_mode {
+	/* [0x0] */
+	uint32_t rsrvd_0[58];
+	/* [0xE8] */
+	uint32_t ittrigout;
+	/* [0xEC] */
+	uint32_t rsrvd_1[3];
+	/* [0xF8] */
+	uint32_t ittrigin;
+	/* [0xFC] */
+	uint32_t rsrvd_2;
+	/* [0x100] */
+	uint32_t itctrl;
+};
+
+struct al_cxela500_sw_lock {
+	/* [0x0] */
+	uint32_t lar;
+	/* [0x4] */
+	uint32_t lsr;
+};
+
+struct al_cxela500_device {
+	/* [0x0] */
+	uint32_t devarch;
+	/* [0x4] */
+	uint32_t devid2;
+	/* [0x8] */
+	uint32_t devid1;
+	/* [0xC] */
+	uint32_t devid;
+	/* [0x10] */
+	uint32_t devtype;
+};
+
+struct al_cxela500_id {
+	/* [0x0] */
+	uint32_t PIDR4;
+	/* [0x4] */
+	uint32_t PIDR5;
+	/* [0x8] */
+	uint32_t PIDR6;
+	/* [0xC] */
+	uint32_t PIDR7;
+	/* [0x10] */
+	uint32_t PIDR0;
+	/* [0x14] */
+	uint32_t PIDR1;
+	/* [0x18] */
+	uint32_t PIDR2;
+	/* [0x1C] */
+	uint32_t PIDR3;
+	/* [0x20] */
+	uint32_t CIDR0;
+	/* [0x24] */
+	uint32_t CIDR1;
+	/* [0x28] */
+	uint32_t CIDR2;
+	/* [0x2C] */
+	uint32_t CIDR3;
+};
+
+struct al_cxela500_regs {
+	struct al_cxela500_control ctrl;				/* [0x0] */
+	struct al_cxela500_cur_state cur_state;			/* [0x20] */
+	struct al_cxela500_ram ram;						/* [0x40] */
+	uint32_t rsrvd_0[44];
+	struct al_cxela500_trig_state trig_state[5];	/* [0x100] */
+	uint32_t rsrvd_1[512];
+	struct al_cxela500_intg_mode intg_mode;			/* [0xE00] */
+	uint32_t rsrvd_2[43];
+	struct al_cxela500_sw_lock sw_lock;				/* [0xFB0] */
+	uint32_t authstatus;							/* [0xFB8] */
+	struct al_cxela500_device device;				/* [0xFBC] */
+	struct al_cxela500_id id;						/* [0xFD0] */
+};
+
+
+/*
+ * Registers Fields
+ */
+
+/**** control registers ****/
+#define CXELA500_CONTROL_CTRL_RUN (1 << 0)
+
+#define CXELA500_CONTROL_TIMECTRL_TCSEL0_MASK 0x0000000F
+#define CXELA500_CONTROL_TIMECTRL_TCSEL0_SHIFT 0
+#define CXELA500_CONTROL_TIMECTRL_TCSEL1_MASK 0x000000F0
+#define CXELA500_CONTROL_TIMECTRL_TCSEL1_SHIFT 4
+#define CXELA500_CONTROL_TIMECTRL_TSINT_MASK 0x0000F000
+#define CXELA500_CONTROL_TIMECTRL_TSINT_SHIFT 12
+#define CXELA500_CONTROL_TIMECTRL_TSEN (1 << 16)
+
+#define CXELA500_CONTROL_TSSR_ALTTS_MASK 0x000000FF
+#define CXELA500_CONTROL_TSSR_ALTTS_SHIFT 0
+
+#define CXELA500_CONTROL_PTACTION_CTTRIGOUT_MASK 0x00000003
+#define CXELA500_CONTROL_PTACTION_CTTRIGOUT_SHIFT 0
+#define CXELA500_CONTROL_PTACTION_STOPCLOCK (1 << 2)
+#define CXELA500_CONTROL_PTACTION_TRACE (1 << 3)
+#define CXELA500_CONTROL_PTACTION_ELAOUTPUT_MASK 0x000000F0
+#define CXELA500_CONTROL_PTACTION_ELAOUTPUT_SHIFT 4
+
+/**** current state registers ****/
+#define CXELA500_CURSTATE_CTSR_CTSR_MASK 0x0000001F
+#define CXELA500_CURSTATE_CTSR_CTSR_SHIFT 0
+#define CXELA500_CURSTATE_CTSR_FINAL_STATE (1<<31)
+
+#define CXELA500_CURSTATE_CAVR_CAVR_MASK 0x000000FF
+#define CXELA500_CURSTATE_CAVR_CAVR_SHIFT 0
+
+/**** ram registers ****/
+#define CXELA500_RAM_RRAR_RRA_MASK 0x7FFFFFFF
+#define CXELA500_RAM_RRAR_RRA_SHIFT 0
+
+#define CXELA500_RAM_RWAR_RWA_MASK 0x7FFFFFFF
+#define CXELA500_RAM_RWAR_RWA_SHIFT 0
+#define CXELA500_RAM_RWAR_WRAP (1<<31)
+
+/**** trigger state registers ****/
+#define CXELA500_TRIGSTATE_SIGSEL_SIGSEL_MASK 0x00000FFF
+#define CXELA500_TRIGSTATE_SIGSEL_SIGSEL_SHIFT 0
+
+#define CXELA500_TRIGSTATE_TRIGCTRL_COMP_MASK 0x00000007
+#define CXELA500_TRIGSTATE_TRIGCTRL_COMP_SHIFT 0
+#define CXELA500_TRIGSTATE_TRIGCTRL_COMPSEL (1<<3)
+#define CXELA500_TRIGSTATE_TRIGCTRL_WATCHRST (1<<4)
+#define CXELA500_TRIGSTATE_TRIGCTRL_COUNTSRC (1<<5)
+#define CXELA500_TRIGSTATE_TRIGCTRL_TRACE_MASK 0x000000C0
+#define CXELA500_TRIGSTATE_TRIGCTRL_TRACE_SHIFT 6
+#define CXELA500_TRIGSTATE_TRIGCTRL_COUNTCLR (1<<8)
+#define CXELA500_TRIGSTATE_TRIGCTRL_COUNTBRK (1<<9)
+#define CXELA500_TRIGSTATE_TRIGCTRL_CAPTID_MASK 0x00000C00
+#define CXELA500_TRIGSTATE_TRIGCTRL_CAPTID_SHIFT 10
+#define CXELA500_TRIGSTATE_TRIGCTRL_ALTCOMP_MASK 0x00007000
+#define CXELA500_TRIGSTATE_TRIGCTRL_ALTCOMP_SHIFT 12
+#define CXELA500_TRIGSTATE_TRIGCTRL_ALTCOMPSEL (1<<15)
+
+#define CXELA500_TRIGSTATE_NEXTSTATE_NEXTSTATE_MASK 0x0000001F
+#define CXELA500_TRIGSTATE_NEXTSTATE_NEXTSTATE_SHIFT 0
+
+#define CXELA500_TRIGSTATE_ACTION_CTTRIGOUT_MASK 0x00000003
+#define CXELA500_TRIGSTATE_ACTION_CTTRIGOUT_SHIFT 0
+#define CXELA500_TRIGSTATE_ACTION_STOPCLOCK (1<<2)
+#define CXELA500_TRIGSTATE_ACTION_TRACE (1<<3)
+#define CXELA500_TRIGSTATE_ACTION_ELAOUTPUT_MASK 0x000000F0
+#define CXELA500_TRIGSTATE_ACTION_ELAOUTPUT_SHIFT 4
+
+#define CXELA500_TRIGSTATE_ALTNEXTSTATE_ALTNEXTSTATE_MASK 0x0000001F
+#define CXELA500_TRIGSTATE_ALTNEXTSTATE_ALTNEXTSTATE_SHIFT 0
+
+#define CXELA500_TRIGSTATE_ALTACTION_CTTRIGOUT_MASK 0x00000003
+#define CXELA500_TRIGSTATE_ALTACTION_CTTRIGOUT_SHIFT 0
+#define CXELA500_TRIGSTATE_ALTACTION_STOPCLOCK (1<<2)
+#define CXELA500_TRIGSTATE_ALTACTION_TRACE (1<<3)
+#define CXELA500_TRIGSTATE_ALTACTION_ELAOUTPUT_MASK 0x000000F0
+#define CXELA500_TRIGSTATE_ALTACTION_ELAOUTPUT_SHIFT 4
+
+#define CXELA500_TRIGSTATE_EXTMASK_CTTRIGIN_MASK 0x00000003
+#define CXELA500_TRIGSTATE_EXTMASK_CTTRIGIN_SHIFT 0
+#define CXELA500_TRIGSTATE_EXTMASK_EXTTRIG_MASK 0x000000FC
+#define CXELA500_TRIGSTATE_EXTMASK_EXTTRIG_SHIFT 2
+
+#define CXELA500_TRIGSTATE_EXTCOMP_CTTRIGIN_MASK 0x00000003
+#define CXELA500_TRIGSTATE_EXTCOMP_CTTRIGIN_SHIFT 0
+#define CXELA500_TRIGSTATE_EXTCOMP_EXTTRIG_MASK 0x000000FC
+#define CXELA500_TRIGSTATE_EXTCOMP_EXTTRIG_SHIFT 2
+
+/**** integration mode registers ****/
+#define CXELA500_INTGMODE_ITTRIGOUT_CTTRIGOUT_MASK 0x00000003
+#define CXELA500_INTGMODE_ITTRIGOUT_CTTRIGOUT_SHIFT 0
+#define CXELA500_INTGMODE_ITTRIGOUT_STOPCLOCK (1<<2)
+#define CXELA500_INTGMODE_ITTRIGOUT_ELAOUTPUT_MASK 0x000000F0
+#define CXELA500_INTGMODE_ITTRIGOUT_ELAOUTPUT_SHIFT 4
+
+#define CXELA500_INTGMODE_ITTRIGIN_CTTRIGIN_MASK 0x00000003
+#define CXELA500_INTGMODE_ITTRIGIN_CTTRIGIN_SHIFT 0
+#define CXELA500_INTGMODE_ITTRIGIN_EXTTRIG_MASK 0x000000FC
+#define CXELA500_INTGMODE_ITTRIGIN_EXTTRIG_SHIFT 2
+
+#define CXELA500_INTGMODE_ITCTRL_IME (1<<0)
+
+/**** sw lock registers ****/
+#define CXELA500_SWLOCK_LSR_LSR_MASK 0x00000007
+#define CXELA500_SWLOCK_LSR_LSR_SHIFT 0
+
+/**** authentication status registers ****/
+#define CXELA500_AUTHSTATUS_AUTHSTATUS_NSID_MASK 0x00000003
+#define CXELA500_AUTHSTATUS_AUTHSTATUS_NSID_SHIFT 0
+#define CXELA500_AUTHSTATUS_AUTHSTATUS_NSNID_MASK 0x0000000C
+#define CXELA500_AUTHSTATUS_AUTHSTATUS_NSNID_SHIFT 2
+#define CXELA500_AUTHSTATUS_AUTHSTATUS_SID_MASK 0x00000030
+#define CXELA500_AUTHSTATUS_AUTHSTATUS_SID_SHIFT 4
+#define CXELA500_AUTHSTATUS_AUTHSTATUS_SNID_MASK 0x000000C0
+#define CXELA500_AUTHSTATUS_AUTHSTATUS_SNID_SHIFT 6
+
+/**** device registers ****/
+#define CXELA500_DEVICE_DEVARCH_ARCHID_MASK 0x0000FFFF
+#define CXELA500_DEVICE_DEVARCH_ARCHID_SHIFT 0
+#define CXELA500_DEVICE_DEVARCH_REVISION_MASK 0x000F0000
+#define CXELA500_DEVICE_DEVARCH_REVISION_SHIFT 16
+#define CXELA500_DEVICE_DEVARCH_PRESENT (1<<20)
+#define CXELA500_DEVICE_DEVARCH_ARCHITECT_MASK 0xFFE00000
+#define CXELA500_DEVICE_DEVARCH_ARCHITECT_SHIFT 21
+
+#define CXELA500_DEVICE_DEVID2_ALTTS_MASK 0x000000FF
+#define CXELA500_DEVICE_DEVID2_ALTTS_SHIFT 0
+
+#define CXELA500_DEVICE_DEVID1_NUMSIGGRPS_MASK 0x000000FF
+#define CXELA500_DEVICE_DEVID1_NUMSIGGRPS_SHIFT 0
+#define CXELA500_DEVICE_DEVID1_SIGGRPWIDTH_MASK 0x0000FF00
+#define CXELA500_DEVICE_DEVID1_SIGGRPWIDTH_SHIFT 8
+#define CXELA500_DEVICE_DEVID1_NUMTRIGSTATES_MASK 0x00FF0000
+#define CXELA500_DEVICE_DEVID1_NUMTRIGSTATES_SHIFT 16
+#define CXELA500_DEVICE_DEVID1_COUNTWIDTH_MASK 0xFF000000
+#define CXELA500_DEVICE_DEVID1_COUNTWIDTH_SHIFT 24
+
+#define CXELA500_DEVICE_DEVID_TRACETYPE_MASK 0x0000000F
+#define CXELA500_DEVICE_DEVID_TRACETYPE_SHIFT 0
+#define CXELA500_DEVICE_DEVID_TRACEFORMAT_MASK 0x000000F0
+#define CXELA500_DEVICE_DEVID_TRACEFORMAT_SHIFT 4
+#define CXELA500_DEVICE_DEVID_SRAM_ADDR_SIZE_MASK 0x0000FF00
+#define CXELA500_DEVICE_DEVID_SRAM_ADDR_SIZE_SHIFT 8
+#define CXELA500_DEVICE_DEVID_COND_TRIG_MASK 0x000F0000
+#define CXELA500_DEVICE_DEVID_COND_TRIG_SHIFT 16
+#define CXELA500_DEVICE_DEVID_ID_CAPTURE_SIZE_MASK 0x01F00000
+#define CXELA500_DEVICE_DEVID_ID_CAPTURE_SIZE_SHIFT 20
+
+#define CXELA500_DEVICE_DEVTYPE_DEVTYPE_MASK 0x000000FF
+#define CXELA500_DEVICE_DEVTYPE_DEVTYPE_SHIFT 0
+
+/**** id registers ****/
+#define CXELA500_ID_PIDR4_DES_2_MASK 0x0000000F
+#define CXELA500_ID_PIDR4_DES_2_SHIFT 0
+#define CXELA500_ID_PIDR4_SIZE_MASK 0x000000F0
+#define CXELA500_ID_PIDR4_SIZE_SHIFT 4
+
+#define CXELA500_ID_PIDR0_PART_0_MASK 0x000000FF
+#define CXELA500_ID_PIDR0_PART_0_SHIFT 0
+
+#define CXELA500_ID_PIDR1_PART_1_MASK 0x0000000F
+#define CXELA500_ID_PIDR1_PART_1_SHIFT 0
+#define CXELA500_ID_PIDR1_DES_0_MASK 0x000000F0
+#define CXELA500_ID_PIDR1_DES_0_SHIFT 4
+
+#define CXELA500_ID_PIDR2_DES_1_MASK 0x00000007
+#define CXELA500_ID_PIDR2_DES_1_SHIFT 0
+#define CXELA500_ID_PIDR2_JEDEC (1<<3)
+#define CXELA500_ID_PIDR2_REVISION_MASK 0x000000F0
+#define CXELA500_ID_PIDR2_REVISION_SHIFT 4
+
+#define CXELA500_ID_PIDR3_CMOD_MASK 0x0000000F
+#define CXELA500_ID_PIDR3_CMOD_SHIFT 0
+#define CXELA500_ID_PIDR3_REVAND_MASK 0x000000F0
+#define CXELA500_ID_PIDR3_REVAND_SHIFT 4
+
+#define CXELA500_ID_CIDR0_PRMBL_0_MASK 0x000000FF
+#define CXELA500_ID_CIDR0_PRMBL_0_SHIFT 0
+
+#define CXELA500_ID_CIDR1_PRMBL_1_MASK 0x0000000F
+#define CXELA500_ID_CIDR1_PRMBL_1_SHIFT 0
+#define CXELA500_ID_CIDR1_CLASS_MASK 0x000000F0
+#define CXELA500_ID_CIDR1_CLASS_SHIFT 4
+
+#define CXELA500_ID_CIDR2_PRMBL_2_MASK 0x000000FF
+#define CXELA500_ID_CIDR2_PRMBL_2_SHIFT
+
+#define CXELA500_ID_CIDR3_PRMBL_3_MASK 0x000000FF
+#define CXELA500_ID_CIDR3_PRMBL_3_SHIFT
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+
+/** @} */
+
+

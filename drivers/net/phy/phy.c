@@ -36,6 +36,8 @@
 #include <linux/uaccess.h>
 #include <linux/atomic.h>
 
+#include <net/netlink.h>
+#include <linux/rtnetlink.h>
 #include <asm/irq.h>
 
 #define PHY_STATE_STR(_state)			\
@@ -381,6 +383,73 @@ void phy_ethtool_ksettings_get(struct phy_device *phydev,
 	cmd->base.eth_tp_mdix = phydev->mdix;
 }
 EXPORT_SYMBOL(phy_ethtool_ksettings_get);
+
+static int phy_ethtool_gset(struct phy_device *phydev, struct ethtool_cmd *cmd)
+{
+	cmd->supported = phydev->supported;
+
+	cmd->advertising = phydev->advertising;
+	cmd->lp_advertising = phydev->lp_advertising;
+
+	ethtool_cmd_speed_set(cmd, phydev->speed);
+	cmd->duplex = phydev->duplex;
+	if (phydev->interface == PHY_INTERFACE_MODE_MOCA)
+		cmd->port = PORT_BNC;
+	else
+		cmd->port = PORT_MII;
+	cmd->phy_address = phydev->mdio.addr;
+	cmd->transceiver = phy_is_internal(phydev) ?
+		XCVR_INTERNAL : XCVR_EXTERNAL;
+	cmd->autoneg = phydev->autoneg;
+	cmd->eth_tp_mdix_ctrl = phydev->mdix_ctrl;
+	cmd->eth_tp_mdix = phydev->mdix;
+
+	return 0;
+}
+
+int phy_ethtool_ioctl(struct phy_device *phydev, void *useraddr)
+{
+	u32 cmd;
+	int tmp;
+	struct ethtool_cmd ecmd = { ETHTOOL_GSET };
+	struct ethtool_value edata = { ETHTOOL_GLINK };
+
+	if (get_user(cmd, (u32 *) useraddr))
+		return -EFAULT;
+
+	switch (cmd) {
+	case ETHTOOL_GSET:
+		phy_ethtool_gset(phydev, &ecmd);
+		if (copy_to_user(useraddr, &ecmd, sizeof(ecmd)))
+			return -EFAULT;
+		return 0;
+
+	case ETHTOOL_SSET:
+		if (copy_from_user(&ecmd, useraddr, sizeof(ecmd)))
+			return -EFAULT;
+		return phy_ethtool_sset(phydev, &ecmd);
+
+	case ETHTOOL_NWAY_RST:
+		/* if autoneg is off, it's an error */
+		tmp = phy_read(phydev, MII_BMCR);
+		if (tmp & BMCR_ANENABLE) {
+			tmp |= (BMCR_ANRESTART);
+			phy_write(phydev, MII_BMCR, tmp);
+			return 0;
+		}
+		return -EINVAL;
+
+	case ETHTOOL_GLINK:
+		edata.data = (phy_read(phydev,
+				MII_BMSR) & BMSR_LSTATUS) ? 1 : 0;
+		if (copy_to_user(useraddr, &edata, sizeof(edata)))
+			return -EFAULT;
+		return 0;
+	}
+
+	return -EOPNOTSUPP;
+}
+EXPORT_SYMBOL(phy_ethtool_ioctl);
 
 /**
  * phy_mii_ioctl - generic PHY MII ioctl interface
@@ -1328,6 +1397,38 @@ void phy_ethtool_get_wol(struct phy_device *phydev, struct ethtool_wolinfo *wol)
 		phydev->drv->get_wol(phydev, wol);
 }
 EXPORT_SYMBOL(phy_ethtool_get_wol);
+
+void ubnt_net_notify(void *net, int group, int nlmsgtype,
+			void *data, int size)
+{
+	struct sk_buff *skb = NULL;
+	struct nlmsghdr *nlh = NULL;
+	struct phymsg *msg = NULL;
+	struct net *ndev = (struct net *)net;
+	int err = -ENOBUFS;
+
+	skb = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_ATOMIC);
+	if (!skb)
+		goto errout;
+
+	nlh = nlmsg_put(skb, 0, 0, nlmsgtype, sizeof(struct phymsg), 0);
+	if (!nlh) {
+		err = -EMSGSIZE;
+		kfree_skb(skb);
+		goto errout;
+	}
+
+	msg = nlmsg_data(nlh);
+	memcpy(msg, (struct phymsg *)data, sizeof(*msg));
+	nlmsg_end(skb, nlh);
+
+	rtnl_notify(skb, ndev, 0, group, NULL, GFP_ATOMIC);
+	return;
+errout:
+	if (err < 0)
+		rtnl_set_sk_err(ndev, RTNLGRP_NEIGH, err);
+}
+EXPORT_SYMBOL(ubnt_net_notify);
 
 int phy_ethtool_get_link_ksettings(struct net_device *ndev,
 				   struct ethtool_link_ksettings *cmd)

@@ -73,6 +73,10 @@ obj-$(CONFIG_XGENE_DMA) += xgene-dma.o
 obj-$(CONFIG_ZX_DMA) += zx_dma.o
 obj-$(CONFIG_ST_FDMA) += st_fdma.o
 
+include $(srctree)/drivers/soc/alpine/alpine_hal.mk
+obj-$(CONFIG_AL_SSM_PCIE) += al_ssm_pcie.o
+
+obj-y += al/
 obj-y += mediatek/
 obj-y += qcom/
 obj-y += ti/

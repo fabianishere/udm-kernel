@@ -168,6 +168,14 @@ struct net_bridge_vlan_group {
 	u16				pvid;
 };
 
+enum {
+	BR_FDB_ENTRY_ADD = 0,
+	BR_FDB_ENTRY_DEL,
+	BR_FDB_ENTRY_SRC,
+	BR_FDB_ENTRY_DST,
+	BR_FDB_ENTRY_FWD,
+};
+
 struct net_bridge_fdb_key {
 	mac_addr addr;
 	u16 vlan_id;
@@ -188,6 +196,7 @@ struct net_bridge_fdb_entry {
 	/* write-heavy members should not affect lookups */
 	unsigned long			updated ____cacheline_aligned_in_smp;
 	unsigned long			used;
+	unsigned long			flags;
 
 	struct rcu_head			rcu;
 };
@@ -546,8 +555,8 @@ int br_fdb_fillbuf(struct net_bridge *br, void *buf, unsigned long count,
 		   unsigned long off);
 int br_fdb_insert(struct net_bridge *br, struct net_bridge_port *source,
 		  const unsigned char *addr, u16 vid);
-void br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
-		   const unsigned char *addr, u16 vid, bool added_by_user);
+struct net_bridge_fdb_entry *br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
+		                           const unsigned char *addr, u16 vid, bool added_by_user, void *context);
 
 int br_fdb_delete(struct ndmsg *ndm, struct nlattr *tb[],
 		  struct net_device *dev, const unsigned char *addr, u16 vid);

@@ -2172,8 +2172,19 @@ static inline bool should_fail_request(struct hd_struct *part,
 static inline bool bio_check_ro(struct bio *bio, struct hd_struct *part)
 {
 	const int op = bio_op(bio);
-
-	if (part->policy && op_is_write(op)) {
+	/**
+	 * @note
+	 * ubnt-hal/unifi-hal sets the block device as read-only by default and
+	 * unlocks some partitions only, which leads to policy violation as
+	 * part X is remapped on part 0. A bio layer from v4.1 doesn't have this
+	 *
+	 * Don't check ro flag for part 0 - apply this check on partitions only.
+	 *
+	 * This won't affect userspace in any way. Also this function returns
+	 * false every time anyway as the older lvm-tools doesn't work when
+	 * the policy is enforced.
+	 */
+	if (part->partno && part->policy && op_is_write(op)) {
 		char b[BDEVNAME_SIZE];
 
 		if (op_is_flush(bio->bi_opf) && !bio_sectors(bio))

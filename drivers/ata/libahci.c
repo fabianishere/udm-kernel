@@ -31,7 +31,6 @@
  * http://www.intel.com/technology/serialata/pdf/rev1_1.pdf
  *
  */
-
 #include <linux/kernel.h>
 #include <linux/gfp.h>
 #include <linux/module.h>
@@ -43,10 +42,27 @@
 #include <linux/device.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_cmnd.h>
+#include <linux/gpio.h>
 #include <linux/libata.h>
 #include <linux/pci.h>
 #include "ahci.h"
 #include "libata.h"
+
+#ifdef CONFIG_ARCH_ALPINE
+#include "al_hal_unit_adapter.h"
+#include "al_hal_unit_adapter_regs.h"
+#include "al_hal_iofic.h"
+#include "al_hal_iofic_regs.h"
+#endif
+
+#define al_ahci_iofic_base(base)	((base) + 0x2000)
+#define AL_AHCI_SPEED_AN_TRIES		(16)
+
+struct alpine_host_priv {
+	/* for msix interrupts */
+	unsigned int msix_vecs;
+	struct msix_entry msix_entries[];
+};
 
 static int ahci_skip_host_reset;
 int ahci_ignore_sss;
@@ -91,9 +107,6 @@ static int ahci_hardreset(struct ata_link *link, unsigned int *class,
 static void ahci_postreset(struct ata_link *link, unsigned int *class);
 static void ahci_post_internal_cmd(struct ata_queued_cmd *qc);
 static void ahci_dev_config(struct ata_device *dev);
-#ifdef CONFIG_PM
-static int ahci_port_suspend(struct ata_port *ap, pm_message_t mesg);
-#endif
 static ssize_t ahci_activity_show(struct ata_device *dev, char *buf);
 static ssize_t ahci_activity_store(struct ata_device *dev,
 				   enum sw_activity val);
@@ -115,6 +128,13 @@ static ssize_t ahci_store_em_buffer(struct device *dev,
 static ssize_t ahci_show_em_supported(struct device *dev,
 				      struct device_attribute *attr, char *buf);
 static irqreturn_t ahci_single_level_irq_intr(int irq, void *dev_instance);
+
+static int al_sata_link_hardreset(struct ata_link *link,
+				  const unsigned long *timing,
+				  unsigned long deadline);
+bool al_ahci_sss_wa_needed(struct device *dev);
+static void al_ahci_port_start(struct ata_port *ap);
+static void al_ahci_port_stop(struct ata_port *ap);
 
 static DEVICE_ATTR(ahci_host_caps, S_IRUGO, ahci_show_host_caps, NULL);
 static DEVICE_ATTR(ahci_host_cap2, S_IRUGO, ahci_show_host_cap2, NULL);
@@ -146,6 +166,11 @@ struct device_attribute *ahci_sdev_attrs[] = {
 };
 EXPORT_SYMBOL_GPL(ahci_sdev_attrs);
 
+#ifdef CONFIG_ARCH_ALPINE
+ssize_t al_ahci_transmit_led_message(struct ata_port *ap, u32 state,
+					    ssize_t size);
+#endif
+
 struct ata_port_operations ahci_ops = {
 	.inherits		= &sata_pmp_port_ops,
 
@@ -174,13 +199,19 @@ struct ata_port_operations ahci_ops = {
 	.em_store		= ahci_led_store,
 	.sw_activity_show	= ahci_activity_show,
 	.sw_activity_store	= ahci_activity_store,
+#ifdef CONFIG_ARCH_ALPINE
+	.transmit_led_message	= al_ahci_transmit_led_message,
+#else
 	.transmit_led_message	= ahci_transmit_led_message,
+#endif
 #ifdef CONFIG_PM
 	.port_suspend		= ahci_port_suspend,
 	.port_resume		= ahci_port_resume,
 #endif
 	.port_start		= ahci_port_start,
 	.port_stop		= ahci_port_stop,
+	.al_link_hardreset	= al_sata_link_hardreset,
+	.al_ahci_sss_wa_needed	= al_ahci_sss_wa_needed,
 };
 EXPORT_SYMBOL_GPL(ahci_ops);
 
@@ -419,6 +450,228 @@ static ssize_t ahci_show_em_supported(struct device *dev,
 		       em_ctl & EM_CTL_SGPIO ? "sgpio " : "");
 }
 
+int __read_mostly al_ahci_sss_enabled = 1;
+module_param_named(alpine_sss, al_ahci_sss_enabled, int, 0444);
+MODULE_PARM_DESC(alpine_sss,
+		 "Enabled staggered spinup flag for Alpine SoC(0=disable, 1=enable)");
+
+#ifdef CONFIG_AHCI_ALPINE
+bool al_ahci_enabled(void)
+{
+	return true;
+}
+#else
+bool al_ahci_enabled(void)
+{
+	return false;
+}
+#endif
+EXPORT_SYMBOL_GPL(al_ahci_enabled);
+
+int al_init_msix_interrupts(struct pci_dev *pdev, unsigned int n_ports,
+			    struct ahci_host_priv *hpriv)
+{
+	int i, rc;
+	void __iomem *iofic_base = al_ahci_iofic_base(hpriv->mmio);
+	struct alpine_host_priv *al_data;
+
+	hpriv->plat_data = NULL;
+
+	al_data = kzalloc(sizeof(unsigned int) + n_ports *
+			  sizeof(struct msix_entry), GFP_KERNEL);
+
+	if (!al_data)
+		return -ENOMEM;
+
+	al_data->msix_vecs = n_ports;
+
+	for (i = 0; i < n_ports; i++) {
+		/* entries 0-2 are in group A */
+		al_data->msix_entries[i].entry = 3 + i;
+		al_data->msix_entries[i].vector = 0;
+	}
+
+	rc = pci_enable_msix_exact(pdev, al_data->msix_entries, n_ports);
+
+	if (rc) {
+		dev_info(&pdev->dev,
+			 "failed to enable MSIX, vectors %d rc %d\n",
+			 n_ports, rc);
+		kfree(al_data);
+		return -EPERM;
+	}
+
+	/* we use only group B */
+	al_iofic_config(iofic_base, 1 /*GROUP_B*/,
+			INT_CONTROL_GRP_SET_ON_POSEDGE |
+			INT_CONTROL_GRP_AUTO_CLEAR |
+			INT_CONTROL_GRP_AUTO_MASK |
+			INT_CONTROL_GRP_CLEAR_ON_READ);
+
+	al_iofic_moder_res_config(iofic_base, 1, 15);
+
+	al_iofic_unmask(iofic_base, 1, (1 << n_ports) - 1);
+
+	hpriv->plat_data = al_data;
+
+	return n_ports;
+}
+EXPORT_SYMBOL_GPL(al_init_msix_interrupts);
+
+static void alpine_clean_cause(struct ata_port *ap_this)
+{
+	struct ata_host *host = ap_this->host;
+	struct ahci_host_priv *hpriv = host->private_data;
+	void __iomem *iofic_base = al_ahci_iofic_base(hpriv->mmio);
+
+	/* clean host cause */
+	writel(1 << ap_this->port_no, hpriv->mmio + HOST_IRQ_STAT);
+
+	/* unmask the interrupt in the iofic (auto-masked) */
+	al_iofic_unmask(iofic_base, 1, 1 << ap_this->port_no);
+}
+
+static int al_port_irq(struct ata_host *host, int port)
+{
+	struct ahci_host_priv *hpriv = host->private_data;
+	struct alpine_host_priv *al_priv = hpriv->plat_data;
+
+	return al_priv->msix_entries[port].vector;
+}
+
+static int al_ahci_read_pcie_config(void *handle, int where, uint32_t *val)
+{
+	/* handle is a pointer to the pci_dev */
+	pci_read_config_dword((struct pci_dev *)handle, where, val);
+	return 0;
+}
+
+static int al_ahci_write_pcie_config(void *handle, int where, uint32_t val)
+{
+	/* handle is a pointer to the pci_dev */
+	pci_write_config_dword((struct pci_dev *)handle, where, val);
+	return 0;
+}
+
+static int al_ahci_write_pcie_flr(void *handle)
+{
+	/* handle is a pointer to the pci_dev */
+	__pci_reset_function_locked((struct pci_dev *)handle);
+	udelay(1000);
+	return 0;
+}
+
+void al_ahci_flr(struct pci_dev *pdev)
+{
+	struct al_unit_adapter unit_adapter;
+	int status;
+
+	status = al_unit_adapter_handle_init(&unit_adapter,
+					     AL_UNIT_ADAPTER_TYPE_SATA, 0,
+					     al_ahci_read_pcie_config,
+					     al_ahci_write_pcie_config,
+					     al_ahci_write_pcie_flr,
+					     pdev);
+	if (status) {
+		BUG();
+		return;
+	}
+
+	al_pcie_perform_flr(&unit_adapter);
+}
+EXPORT_SYMBOL_GPL(al_ahci_flr);
+
+bool al_ahci_sss_wa_needed(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+
+	return (al_ahci_enabled() &&
+		pdev->vendor == PCI_VENDOR_ID_ANNAPURNA_LABS) &&
+		al_ahci_sss_enabled;
+}
+EXPORT_SYMBOL_GPL(al_ahci_sss_wa_needed);
+
+static inline int al_sata_phy_reset(struct ata_link *link)
+{
+	int rc;
+	u32 scontrol;
+
+	rc = sata_scr_read(link, SCR_CONTROL, &scontrol);
+
+	if (rc)
+		return rc;
+	/*Speed negotiation is not finished, reset SATA link once again*/
+	scontrol = (scontrol & 0x0f0) | 0x301;
+
+	rc = sata_scr_write_flush(link, SCR_CONTROL, scontrol);
+	if (rc)
+		return rc;
+
+	ata_msleep(link->ap, 1);
+	scontrol = (scontrol & 0x0f0) | 0x300;
+	return sata_scr_write_flush(link, SCR_CONTROL, scontrol);
+}
+
+static int al_sata_link_hardreset(struct ata_link *link,
+				  const unsigned long *timing,
+				  unsigned long deadline)
+{
+	u32 sstatus;
+	int i, rc = 0;
+
+	rc = sata_scr_read(link, SCR_STATUS, &sstatus);
+	if (rc)
+		return rc;
+
+	/*reset to determine link state*/
+	rc = al_sata_phy_reset(link);
+	if (rc)
+		return rc;
+
+	if (!(sstatus & 0xF))
+		goto out;
+
+	ahci_power_up(link->ap);
+
+	for (i = 0; i < AL_AHCI_SPEED_AN_TRIES; i++) {
+		udelay(200);
+		rc = sata_scr_read(link, SCR_STATUS, &sstatus);
+		if (rc)
+			goto out;
+		/*Check if device is present*/
+		if (!(sstatus & 0x3)) {
+			rc = 0;
+			goto out;
+		}
+		/*Check negotiated speed*/
+		if (sstatus & 0xF0)
+			break;
+		ata_dev_warn(&link->device[0],
+			     "WARNING: repeat PHY hardreset for port\n");
+
+		rc = al_sata_phy_reset(link);
+		if (rc)
+			return rc;
+	}
+	if (sstatus & 0x3) {
+		u32 serror;
+
+		rc = sata_link_debounce(link, timing, deadline);
+		if (rc)
+			goto out;
+
+		rc = sata_scr_read(link, SCR_ERROR, &serror);
+		if (!rc)
+			sata_scr_write(link, SCR_ERROR, serror);
+
+		al_ahci_port_start(link->ap);
+		return 0;
+	}
+out:
+	al_ahci_port_stop(link->ap);
+	return rc;
+}
+
 /**
  *	ahci_save_initial_config - Save and fixup initial config values
  *	@dev: target AHCI device
@@ -450,6 +703,16 @@ void ahci_save_initial_config(struct device *dev, struct ahci_host_priv *hpriv)
 	 * reset.  Values without are used for driver operation.
 	 */
 	hpriv->saved_cap = cap = readl(mmio + HOST_CAP);
+
+	if (al_ahci_enabled()) {
+		if (al_ahci_sss_wa_needed(dev)) {
+			cap |= HOST_CAP_SSS;
+			hpriv->saved_cap |= HOST_CAP_SSS;
+		} else {
+			pr_warn("Warning: AHCI al_ahci_sss_enabled flag is disabled\n");
+		}
+	}
+
 	hpriv->saved_port_map = port_map = readl(mmio + HOST_PORTS_IMPL);
 
 	/* CAP2 register is only defined for AHCI 1.2 and later */
@@ -739,7 +1002,7 @@ static int ahci_stop_fis_rx(struct ata_port *ap)
 	return 0;
 }
 
-static void ahci_power_up(struct ata_port *ap)
+void ahci_power_up(struct ata_port *ap)
 {
 	struct ahci_host_priv *hpriv = ap->host->private_data;
 	void __iomem *port_mmio = ahci_port_base(ap);
@@ -756,6 +1019,7 @@ static void ahci_power_up(struct ata_port *ap)
 	/* wake up link */
 	writel(cmd | PORT_CMD_ICC_ACTIVE, port_mmio + PORT_CMD);
 }
+EXPORT_SYMBOL_GPL(ahci_power_up);
 
 static int ahci_set_lpm(struct ata_link *link, enum ata_lpm_policy policy,
 			unsigned int hints)
@@ -830,7 +1094,7 @@ static int ahci_set_lpm(struct ata_link *link, enum ata_lpm_policy policy,
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#if defined(CONFIG_PM) || defined(CONFIG_ARCH_ALPINE)
 static void ahci_power_down(struct ata_port *ap)
 {
 	struct ahci_host_priv *hpriv = ap->host->private_data;
@@ -971,6 +1235,7 @@ int ahci_reset_controller(struct ata_host *host)
 }
 EXPORT_SYMBOL_GPL(ahci_reset_controller);
 
+#define LED_DELAY_TIME   100
 static void ahci_sw_activity(struct ata_link *link)
 {
 	struct ata_port *ap = link->ap;
@@ -982,7 +1247,7 @@ static void ahci_sw_activity(struct ata_link *link)
 
 	emp->activity++;
 	if (!timer_pending(&emp->timer))
-		mod_timer(&emp->timer, jiffies + msecs_to_jiffies(10));
+		mod_timer(&emp->timer, jiffies + msecs_to_jiffies(LED_DELAY_TIME));
 }
 
 static void ahci_sw_activity_blink(struct timer_list *t)
@@ -1018,12 +1283,13 @@ static void ahci_sw_activity_blink(struct timer_list *t)
 
 		/* toggle state */
 		led_message |= (activity_led_state << 16);
-		mod_timer(&emp->timer, jiffies + msecs_to_jiffies(100));
+		mod_timer(&emp->timer, jiffies + msecs_to_jiffies(LED_DELAY_TIME));
 	} else {
 		/* switch to idle */
 		led_message &= ~EM_MSG_LED_VALUE_ACTIVITY;
-		if (emp->blink_policy == BLINK_OFF)
+		if ((ata_phys_link_online(link)) || (emp->blink_policy == BLINK_OFF))
 			led_message |= (1 << 16);
+		mod_timer(&emp->timer, jiffies + msecs_to_jiffies(500));
 	}
 	spin_unlock_irqrestore(ap->lock, flags);
 	ap->ops->transmit_led_message(ap, led_message, 4);
@@ -1038,6 +1304,7 @@ static void ahci_init_sw_activity(struct ata_link *link)
 	/* init activity stats, setup timer */
 	emp->saved_activity = emp->activity = 0;
 	emp->link = link;
+	emp->blink_policy = BLINK_ON;
 	timer_setup(&emp->timer, ahci_sw_activity_blink, 0);
 
 	/* check our blink policy and set flag for link if it's enabled */
@@ -1059,6 +1326,38 @@ int ahci_reset_em(struct ata_host *host)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(ahci_reset_em);
+
+#ifdef CONFIG_ARCH_ALPINE
+ssize_t al_ahci_transmit_led_message(struct ata_port *ap, u32 state,
+					    ssize_t size)
+{
+	struct ahci_host_priv *hpriv = ap->host->private_data;
+	struct ahci_port_priv *pp = ap->private_data;
+	unsigned long flags;
+	int led_val = 0;
+	int pmp;
+	struct ahci_em_priv *emp;
+
+	/* get the slot number from the message */
+	pmp = (state & EM_MSG_LED_PMP_SLOT) >> 8;
+	if (pmp < EM_MAX_SLOTS)
+		emp = &pp->em_priv[pmp];
+	else
+		return -EINVAL;
+
+	if (hpriv->led_gpio[ap->port_no] == -1)
+		return -EINVAL;
+
+	if (state & EM_MSG_LED_VALUE_ON)
+		led_val = 1;
+
+	gpio_set_value(hpriv->led_gpio[ap->port_no], led_val);
+
+	/* save off new led state for port/slot */
+	emp->led_state = state;
+	return size;
+}
+#endif
 
 static ssize_t ahci_transmit_led_message(struct ata_port *ap, u32 state,
 					ssize_t size)
@@ -1915,6 +2214,7 @@ static irqreturn_t ahci_multi_irqs_intr_hard(int irq, void *dev_instance)
 	struct ata_port *ap = dev_instance;
 	void __iomem *port_mmio = ahci_port_base(ap);
 	u32 status;
+	struct ata_host *host = ap->host;
 
 	VPRINTK("ENTER\n");
 
@@ -1926,6 +2226,12 @@ static irqreturn_t ahci_multi_irqs_intr_hard(int irq, void *dev_instance)
 	spin_unlock(ap->lock);
 
 	VPRINTK("EXIT\n");
+
+	if (al_ahci_enabled()) {
+		spin_lock(&host->lock);
+		alpine_clean_cause(ap);
+		spin_unlock(&host->lock);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -1998,6 +2304,31 @@ static irqreturn_t ahci_single_level_irq_intr(int irq, void *dev_instance)
 	VPRINTK("EXIT\n");
 
 	return IRQ_RETVAL(rc);
+}
+
+/* 1 on not anapurna, 0 on success, <0 on error */
+static int al_ahci_request_irq(struct ata_host *host, int port)
+{
+	int port_irq;
+	struct ahci_port_priv *pp = host->ports[port]->private_data;
+	struct ahci_host_priv *hpriv = host->private_data;
+
+	if (al_ahci_enabled()) {
+		if (!(hpriv->flags & AHCI_HFLAG_AL_MSIX)) {
+			pr_debug("%s no msix\n", __func__);
+			return 1;
+		}
+		port_irq = al_port_irq(host, port);
+		pr_debug("%s port: %d\n", __func__, port);
+		if (port_irq < 0)
+			return port_irq;
+
+		return devm_request_irq(host->dev, port_irq,
+					ahci_multi_irqs_intr_hard, 0,
+					pp->irq_desc, host->ports[port]);
+	}
+
+	return 1;
 }
 
 unsigned int ahci_qc_issue(struct ata_queued_cmd *qc)
@@ -2298,6 +2629,21 @@ static void ahci_pmp_detach(struct ata_port *ap)
 		writel(pp->intr_mask, port_mmio + PORT_IRQ_MASK);
 }
 
+static void al_ahci_port_start(struct ata_port *ap)
+{
+	ahci_start_port(ap);
+}
+
+static void al_ahci_port_stop(struct ata_port *ap)
+{
+	const pm_message_t dummy = {
+		.event = 1,
+	};
+
+	/* Same as port suspend */
+	ahci_port_suspend(ap, dummy);
+}
+
 int ahci_port_resume(struct ata_port *ap)
 {
 	ahci_rpm_get_port(ap);
@@ -2314,8 +2660,8 @@ int ahci_port_resume(struct ata_port *ap)
 }
 EXPORT_SYMBOL_GPL(ahci_port_resume);
 
-#ifdef CONFIG_PM
-static int ahci_port_suspend(struct ata_port *ap, pm_message_t mesg)
+#if defined(CONFIG_PM) || defined(CONFIG_ARCH_ALPINE)
+int ahci_port_suspend(struct ata_port *ap, pm_message_t mesg)
 {
 	const char *emsg = NULL;
 	int rc;
@@ -2331,6 +2677,7 @@ static int ahci_port_suspend(struct ata_port *ap, pm_message_t mesg)
 	ahci_rpm_put_port(ap);
 	return rc;
 }
+EXPORT_SYMBOL_GPL(ahci_port_suspend);
 #endif
 
 static int ahci_port_start(struct ata_port *ap)
@@ -2554,6 +2901,7 @@ static int ahci_host_activate_multi_irqs(struct ata_host *host,
 	struct ahci_host_priv *hpriv = host->private_data;
 	int i, rc;
 
+	pr_debug("ahci_host_activate_multi_irqs\n");
 	rc = ata_host_start(host);
 	if (rc)
 		return rc;
@@ -2571,8 +2919,11 @@ static int ahci_host_activate_multi_irqs(struct ata_host *host,
 			continue;
 		}
 
-		rc = devm_request_irq(host->dev, irq, ahci_multi_irqs_intr_hard,
-				0, pp->irq_desc, host->ports[i]);
+		rc = al_ahci_request_irq(host, i);
+		pr_debug("al_ahci_request_irq returned: %d\n",rc);
+		if (rc >0)
+			rc = devm_request_irq(host->dev, irq, ahci_multi_irqs_intr_hard,
+					0, dev_driver_string(host->dev), host->ports[i]);
 
 		if (rc)
 			return rc;

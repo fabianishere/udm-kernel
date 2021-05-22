@@ -954,6 +954,37 @@ unsigned int i2c_adapter_depth(struct i2c_adapter *adapter)
 EXPORT_SYMBOL_GPL(i2c_adapter_depth);
 
 /*
+ * Let users lock/unlock I2C bus through sysfs. When the I2C adapter is
+ * locked all i2c transactions to i2c devices under this adapter will be
+ * blocked unil the lock_control release it.
+ *
+ * Pass [y|1|on] to lock, and [n|0|off] to unlock (case insensitive).
+ */
+static ssize_t lock_control_store(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t count)
+{
+	struct i2c_adapter *i2c_adapter = to_i2c_adapter(dev);
+	bool val;
+
+	if (kstrtobool(buf, &val))
+		return -EINVAL;
+
+	dev_dbg(dev, "Attempt to %s bus %s\n", val ? "lock" : "unlock",
+		i2c_adapter->name);
+	if (val)
+		i2c_lock_bus(i2c_adapter, I2C_LOCK_ROOT_ADAPTER);
+	else
+		i2c_unlock_bus(i2c_adapter, I2C_LOCK_ROOT_ADAPTER);
+	dev_dbg(dev, "Bus %s is %s\n", i2c_adapter->name,
+		val ? "locked" : "unlocked");
+
+	return count;
+}
+
+static DEVICE_ATTR_WO(lock_control);
+
+/*
  * Let users instantiate I2C devices through sysfs. This can be used when
  * platform initialization code doesn't contain the proper data for
  * whatever reason. Also useful for drivers that do device detection and
@@ -1082,6 +1113,7 @@ static struct attribute *i2c_adapter_attrs[] = {
 	&dev_attr_name.attr,
 	&dev_attr_new_device.attr,
 	&dev_attr_delete_device.attr,
+	&dev_attr_lock_control.attr,
 	NULL
 };
 ATTRIBUTE_GROUPS(i2c_adapter);

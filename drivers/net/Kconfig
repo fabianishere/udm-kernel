@@ -499,6 +499,8 @@ config THUNDERBOLT_NET
 
 source "drivers/net/hyperv/Kconfig"
 
+source "drivers/net/power/Kconfig"
+
 config NETDEVSIM
 	tristate "Simulated networking device"
 	depends on DEBUG_FS

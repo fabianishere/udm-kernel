@@ -412,6 +412,11 @@ config GPIO_PL061
 	help
 	  Say yes here to support the PrimeCell PL061 GPIO device
 
+config GPIO_AL_SGPO
+	bool "Annapurna Labs SGPO support"
+	help
+	  Say yes here to support the Annapurna Labs SGPO device
+
 config GPIO_PMIC_EIC_SPRD
 	tristate "Spreadtrum PMIC EIC support"
 	depends on MFD_SC27XX_PMIC || COMPILE_TEST

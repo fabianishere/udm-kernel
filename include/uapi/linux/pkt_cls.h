@@ -260,10 +260,15 @@ enum {
 	TCA_FW_INDEV, /*  used by CONFIG_NET_CLS_IND */
 	TCA_FW_ACT, /* used by CONFIG_NET_CLS_ACT */
 	TCA_FW_MASK,
+	TCA_FW_FMASK,
+	TCA_FW_FSHIFT,
+	TCA_FW_FLAGS,
 	__TCA_FW_MAX
 };
 
 #define TCA_FW_MAX (__TCA_FW_MAX - 1)
+
+#define TCA_FW_FLAG_UBNT_MARK (1 << 0) /* use ubnt_mark instead of skb->mark */
 
 /* TC index filter */
 

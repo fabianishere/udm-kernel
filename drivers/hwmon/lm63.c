@@ -68,6 +68,7 @@ static const unsigned short normal_i2c[] = { 0x18, 0x4c, 0x4e, I2C_CLIENT_END };
 #define LM63_REG_CONVRATE		0x04
 #define LM63_REG_CONFIG2		0xBF
 #define LM63_REG_CONFIG_FAN		0x4A
+#define LM63_REG_CONFIG_FAN_PWM_OUT_POL	0x10
 
 #define LM63_REG_TACH_COUNT_MSB		0x47
 #define LM63_REG_TACH_COUNT_LSB		0x46
@@ -93,6 +94,7 @@ static const unsigned short normal_i2c[] = { 0x18, 0x4c, 0x4e, I2C_CLIENT_END };
 #define LM63_REG_REMOTE_LOW_LSB		0x14
 #define LM63_REG_REMOTE_TCRIT		0x19
 #define LM63_REG_REMOTE_TCRIT_HYST	0x21
+#define LM63_REG_REMOTE_DIODE_FILTER	0xBF
 
 #define LM63_REG_ALERT_STATUS		0x02
 #define LM63_REG_ALERT_MASK		0x16
@@ -186,6 +188,8 @@ struct lm63_data {
 	bool lut_temp_highres;
 	bool remote_unsigned; /* true if unsigned remote upper limits */
 	bool trutherm;
+	bool pwm_polarity;
+	char init_pwm[4];
 };
 
 static inline int temp8_from_reg(struct lm63_data *data, int nr)
@@ -389,13 +393,10 @@ static ssize_t show_pwm1(struct device *dev, struct device_attribute *devattr,
 	return sprintf(buf, "%d\n", pwm);
 }
 
-static ssize_t set_pwm1(struct device *dev, struct device_attribute *devattr,
+static ssize_t set_pwm1_index(struct lm63_data *data, int nr,
 			const char *buf, size_t count)
 {
-	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
-	struct lm63_data *data = dev_get_drvdata(dev);
 	struct i2c_client *client = data->client;
-	int nr = attr->index;
 	unsigned long val;
 	int err;
 	u8 reg;
@@ -417,6 +418,14 @@ static ssize_t set_pwm1(struct device *dev, struct device_attribute *devattr,
 	mutex_unlock(&data->update_lock);
 	return count;
 }
+
+static ssize_t set_pwm1(struct device *dev, struct device_attribute *devattr,
+			const char *buf, size_t count)
+{
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+	return set_pwm1_index(dev_get_drvdata(dev), attr->index, buf, count);
+}
+
 
 static ssize_t pwm1_enable_show(struct device *dev,
 				struct device_attribute *dummy, char *buf)
@@ -456,6 +465,33 @@ static ssize_t pwm1_enable_store(struct device *dev,
 		data->config_fan &= ~0x20;
 	i2c_smbus_write_byte_data(client, LM63_REG_CONFIG_FAN,
 				  data->config_fan);
+	mutex_unlock(&data->update_lock);
+	return count;
+}
+
+static ssize_t show_pwm1_freq(struct device *dev, struct device_attribute *dummy,
+			 char *buf)
+{
+	struct lm63_data *data = lm63_update_device(dev);
+
+	return sprintf(buf, "%d\n", data->pwm1_freq);
+}
+
+static ssize_t set_pwm1_freq(struct device *dev, struct device_attribute *dummy,
+			const char *buf, size_t count)
+{
+	struct lm63_data *data = dev_get_drvdata(dev);
+	struct i2c_client *client = data->client;
+	unsigned long val;
+	int err;
+
+	err = kstrtoul(buf, 10, &val);
+	if (err)
+		return err;
+
+	val = clamp_val(val, 1, 31);
+	mutex_lock(&data->update_lock);
+	i2c_smbus_write_byte_data(client, LM63_REG_PWM_FREQ, val & 0x1f);
 	mutex_unlock(&data->update_lock);
 	return count;
 }
@@ -756,6 +792,8 @@ static SENSOR_DEVICE_ATTR(fan1_min, S_IWUSR | S_IRUGO, show_fan,
 
 static SENSOR_DEVICE_ATTR(pwm1, S_IWUSR | S_IRUGO, show_pwm1, set_pwm1, 0);
 static DEVICE_ATTR_RW(pwm1_enable);
+static DEVICE_ATTR(pwm1_freq, S_IWUSR | S_IRUGO,
+	show_pwm1_freq, set_pwm1_freq);
 static SENSOR_DEVICE_ATTR(pwm1_auto_point1_pwm, S_IWUSR | S_IRUGO,
 	show_pwm1, set_pwm1, 1);
 static SENSOR_DEVICE_ATTR(pwm1_auto_point1_temp, S_IWUSR | S_IRUGO,
@@ -861,6 +899,7 @@ static DEVICE_ATTR_RW(update_interval);
 static struct attribute *lm63_attributes[] = {
 	&sensor_dev_attr_pwm1.dev_attr.attr,
 	&dev_attr_pwm1_enable.attr,
+	&dev_attr_pwm1_freq.attr,
 	&sensor_dev_attr_pwm1_auto_point1_pwm.dev_attr.attr,
 	&sensor_dev_attr_pwm1_auto_point1_temp.dev_attr.attr,
 	&sensor_dev_attr_pwm1_auto_point1_temp_hyst.dev_attr.attr,
@@ -1029,6 +1068,7 @@ static void lm63_init_client(struct lm63_data *data)
 	struct i2c_client *client = data->client;
 	struct device *dev = &client->dev;
 	u8 convrate;
+	int temp2_crit;
 
 	data->config = i2c_smbus_read_byte_data(client, LM63_REG_CONFIG1);
 	data->config_fan = i2c_smbus_read_byte_data(client,
@@ -1042,14 +1082,37 @@ static void lm63_init_client(struct lm63_data *data)
 					  data->config);
 	}
 	/* Tachometer is always enabled on LM64 */
-	if (data->kind == lm64)
+	if (data->kind == lm64) {
 		data->config |= 0x04;
+	} else if (data->kind == lm63) {
+		if (client->dev.of_node) {
+			if (of_property_read_bool(client->dev.of_node, "tachometer-en")) {
+				/*
+					In the configuration register (0x3) of LM63, BIT2: is a alert and tachometer selection
+						1: is open drain as an output
+						0: is high impedance as an input.
+				*/
+				data->config |= 0x04;
+			} else {
+				data->config &= ~0x04;
+			}
+			i2c_smbus_write_byte_data(client, LM63_REG_CONFIG1, data->config);
+		}
+	}
+
+	if (client->dev.of_node) {
+		if (0 == of_property_read_u32(client->dev.of_node, "temp2-crit", &temp2_crit)) {
+			data->config |= 0x02;
+			i2c_smbus_write_byte_data(client, LM63_REG_CONFIG1, data->config);
+			i2c_smbus_write_byte_data(client, LM63_REG_REMOTE_TCRIT, TEMP8_TO_REG(temp2_crit));
+		}
+	}
 
 	/* We may need pwm1_freq before ever updating the client data */
-	data->pwm1_freq = i2c_smbus_read_byte_data(client, LM63_REG_PWM_FREQ);
 	if (data->pwm1_freq == 0)
 		data->pwm1_freq = 1;
 
+	i2c_smbus_write_byte_data(client, LM63_REG_PWM_FREQ, data->pwm1_freq & 0x1f);
 	switch (data->kind) {
 	case lm63:
 	case lm64:
@@ -1087,6 +1150,26 @@ static void lm63_init_client(struct lm63_data *data)
 			data->remote_unsigned = true;
 	}
 
+	if (data->pwm_polarity) {
+		data->config_fan |= LM63_REG_CONFIG_FAN_PWM_OUT_POL;
+	} else {
+		data->config_fan &= (~LM63_REG_CONFIG_FAN_PWM_OUT_POL);
+	}
+	i2c_smbus_write_byte_data(client, LM63_REG_CONFIG_FAN, data->config_fan);
+
+	if (data->init_pwm[0] != '\0') {
+		set_pwm1_index(data, 0, data->init_pwm, 0);
+	}
+
+	/*
+	 * Set thermal diode filter to Level 1 filtering (bits 2:1)
+	 * 00: Filter Disabled Remote Diode
+	 * 01: Filter Level 1 (minimal filtering, same as 10)
+	 * 10: Filter Level 1 (minimal filtering, same as 01)
+	 * 11: Filter Level 2 (maximum filtering)
+	 */
+	i2c_smbus_write_byte_data(client, LM63_REG_REMOTE_DIODE_FILTER, 0x4);
+
 	/* Show some debug info about the LM63 configuration */
 	if (data->kind == lm63)
 		dev_dbg(dev, "Alert/tach pin configured for %s\n",
@@ -1106,7 +1189,7 @@ static int lm63_probe(struct i2c_client *client,
 	struct device *dev = &client->dev;
 	struct device *hwmon_dev;
 	struct lm63_data *data;
-	int groups = 0;
+	int groups = 0, pwm_polarity, pwm_duty, pwm_freq;
 
 	data = devm_kzalloc(dev, sizeof(struct lm63_data), GFP_KERNEL);
 	if (!data)
@@ -1123,6 +1206,16 @@ static int lm63_probe(struct i2c_client *client,
 	data->kind = id->driver_data;
 	if (data->kind == lm64)
 		data->temp2_offset = 16000;
+
+	data->init_pwm[0] = '\0';
+	if (client->dev.of_node) {
+		if (0 == of_property_read_u32(client->dev.of_node, "pwm-polarity", &pwm_polarity))
+			data->pwm_polarity = pwm_polarity;
+		if (0 == of_property_read_u32(client->dev.of_node, "pwm-duty", &pwm_duty))
+			snprintf(data->init_pwm, sizeof(data->init_pwm), "%u", pwm_duty);
+		if (0 == of_property_read_u32(client->dev.of_node, "pwm-freq", &pwm_freq))
+			data->pwm1_freq = pwm_freq;
+	}
 
 	/* Initialize chip */
 	lm63_init_client(data);

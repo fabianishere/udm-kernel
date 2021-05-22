@@ -240,6 +240,7 @@ enum {
 						        error-handling stage) */
 	AHCI_HFLAG_NO_DEVSLP		= (1 << 17), /* no device sleep */
 	AHCI_HFLAG_NO_FBS		= (1 << 18), /* no FBS */
+	AHCI_HFLAG_AL_MSIX		= (1 << 19), /* alpine msix */
 
 #ifdef CONFIG_PCI_MSI
 	AHCI_HFLAG_MULTI_MSI		= (1 << 20), /* per-port MSI(-X) */
@@ -380,6 +381,9 @@ struct ahci_host_priv {
 	/* only required for per-port MSI(-X) support */
 	int			(*get_irq_vector)(struct ata_host *host,
 						  int port);
+#ifdef CONFIG_ARCH_ALPINE
+	int			led_gpio[AHCI_MAX_PORTS];
+#endif
 };
 
 extern int ahci_ignore_sss;
@@ -425,6 +429,7 @@ void ahci_start_engine(struct ata_port *ap);
 int ahci_check_ready(struct ata_link *link);
 int ahci_kick_engine(struct ata_port *ap);
 int ahci_port_resume(struct ata_port *ap);
+int ahci_port_suspend(struct ata_port *ap, pm_message_t mesg);
 void ahci_set_em_messages(struct ahci_host_priv *hpriv,
 			  struct ata_port_info *pi);
 int ahci_reset_em(struct ata_host *host);
@@ -432,6 +437,7 @@ void ahci_print_info(struct ata_host *host, const char *scc_s);
 int ahci_host_activate(struct ata_host *host, struct scsi_host_template *sht);
 void ahci_error_handler(struct ata_port *ap);
 u32 ahci_handle_port_intr(struct ata_host *host, u32 irq_masked);
+void ahci_power_up(struct ata_port *ap);
 
 static inline void __iomem *__ahci_port_base(struct ata_host *host,
 					     unsigned int port_no)
@@ -452,4 +458,9 @@ static inline int ahci_nr_ports(u32 cap)
 	return (cap & 0x1f) + 1;
 }
 
+bool al_ahci_enabled(void);
+int al_init_msix_interrupts(struct pci_dev *pdev, unsigned int n_ports,
+			    struct ahci_host_priv *hpriv);
+void al_ahci_flr(struct pci_dev *pdev);
+bool al_ahci_sss_wa_needed(struct device *dev);
 #endif /* _AHCI_H */

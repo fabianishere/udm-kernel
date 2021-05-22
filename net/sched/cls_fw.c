@@ -48,6 +48,9 @@ struct fw_filter {
 	struct tcf_exts		exts;
 	struct tcf_proto	*tp;
 	struct rcu_work		rwork;
+	u32			mask;
+	u8			shift;
+	u8			flags;
 };
 
 static u32 fw_hash(u32 handle)
@@ -64,14 +67,43 @@ static int fw_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	struct fw_filter *f;
 	int r;
 	u32 id = skb->mark;
+	u32 ubnt_id = skb->ubnt_mark;
 
 	if (head != NULL) {
+		ubnt_id &= head->mask;
+
+		for (f = rcu_dereference_bh(head->ht[fw_hash(ubnt_id)]); f;
+		     f = rcu_dereference_bh(f->next)) {
+			if (f->flags & TCA_FW_FLAG_UBNT_MARK && f->id == ubnt_id) {
+
+				*res = f->res;
+				if (f->mask) {
+					// force overwrite res->class = 0 to make pseudo device and use fw mask rule
+					res->class = 0;
+					res->classid += (skb->ubnt_mark & f->mask) >> f->shift;
+				}
+#ifdef CONFIG_NET_CLS_IND
+				if (!tcf_match_indev(skb, f->ifindex))
+					continue;
+#endif /* CONFIG_NET_CLS_IND */
+				r = tcf_exts_exec(skb, &f->exts, res);
+				if (r < 0)
+					continue;
+				return r;
+			}
+		}
+
 		id &= head->mask;
 
 		for (f = rcu_dereference_bh(head->ht[fw_hash(id)]); f;
 		     f = rcu_dereference_bh(f->next)) {
-			if (f->id == id) {
+			if (!(f->flags & TCA_FW_FLAG_UBNT_MARK) && f->id == id) {
 				*res = f->res;
+				if (f->mask) {
+					// force overwrite res->class = 0 to make pseudo device and use fw mask rule
+					res->class = 0;
+					res->classid += (skb->mark & f->mask) >> f->shift;
+				}
 #ifdef CONFIG_NET_CLS_IND
 				if (!tcf_match_indev(skb, f->ifindex))
 					continue;
@@ -205,6 +237,9 @@ static const struct nla_policy fw_policy[TCA_FW_MAX + 1] = {
 	[TCA_FW_CLASSID]	= { .type = NLA_U32 },
 	[TCA_FW_INDEV]		= { .type = NLA_STRING, .len = IFNAMSIZ },
 	[TCA_FW_MASK]		= { .type = NLA_U32 },
+	[TCA_FW_FMASK]		= { .type = NLA_U32 },
+	[TCA_FW_FSHIFT]		= { .type = NLA_U8 },
+	[TCA_FW_FLAGS]		= { .type = NLA_U8 },
 };
 
 static int fw_set_parms(struct net *net, struct tcf_proto *tp,
@@ -244,6 +279,17 @@ static int fw_set_parms(struct net *net, struct tcf_proto *tp,
 	} else if (head->mask != 0xFFFFFFFF)
 		return err;
 
+	if (tb[TCA_FW_FMASK]) {
+		f->mask = nla_get_u32(tb[TCA_FW_FMASK]);
+	}
+
+	if (tb[TCA_FW_FSHIFT]) {
+		f->shift = nla_get_u8(tb[TCA_FW_FSHIFT]);
+	}
+
+	if (tb[TCA_FW_FLAGS]) {
+		f->flags = nla_get_u8(tb[TCA_FW_FLAGS]);
+	}
 	return 0;
 }
 
@@ -416,6 +462,21 @@ static int fw_dump(struct net *net, struct tcf_proto *tp, void *fh,
 	if (head->mask != 0xFFFFFFFF &&
 	    nla_put_u32(skb, TCA_FW_MASK, head->mask))
 		goto nla_put_failure;
+
+	if (f->mask != 0) {
+		if (nla_put_u32(skb, TCA_FW_FMASK, f->mask))
+			goto nla_put_failure;
+	}
+
+	if (f->shift != 0) {
+		if (nla_put_u8(skb, TCA_FW_FSHIFT, f->shift))
+			goto nla_put_failure;
+	}
+
+	if (f->flags != 0) {
+		if (nla_put_u8(skb, TCA_FW_FLAGS, f->flags))
+			goto nla_put_failure;
+	}
 
 	if (tcf_exts_dump(skb, &f->exts) < 0)
 		goto nla_put_failure;

@@ -34,7 +34,7 @@
 
 #define AT803X_SMART_SPEED			0x14
 #define AT803X_LED_CONTROL			0x18
-
+#define AT803X_LED_OVERRIDE			0x19
 #define AT803X_DEVICE_ADDR			0x03
 #define AT803X_LOC_MAC_ADDR_0_15_OFFSET		0x804C
 #define AT803X_LOC_MAC_ADDR_16_31_OFFSET	0x804B
@@ -59,6 +59,15 @@
 
 #define AT803X_DEBUG_REG_5			0x05
 #define AT803X_DEBUG_TX_CLK_DLY_EN		BIT(8)
+
+#ifdef CONFIG_AT8033_SEL_1P8
+#define AT8033_DEBUG_SEL_1P8		0x1F
+#define AT8033_DEBUG_SEL_1P8_EN		BIT(3)
+#endif
+
+#ifdef CONFIG_AR8033_DISABLE_EEE
+#define AT8033_EEE_ADVERT		0x3C
+#endif
 
 #define ATH8030_PHY_ID 0x004dd076
 #define ATH8031_PHY_ID 0x004dd074
@@ -269,6 +278,30 @@ static int at803x_config_init(struct phy_device *phydev)
 			return ret;
 	}
 
+	/* invert LED_ACT -> LED_ACT = 0 */
+	ret = phy_write(phydev, AT803X_LED_OVERRIDE, 0x0200);
+	if (ret)
+		return ret;
+
+#ifdef CONFIG_AT8033_SEL_1P8
+	ret = phy_write(phydev, AT803X_DEBUG_ADDR,
+			AT8033_DEBUG_SEL_1P8);
+	if (ret)
+		return ret;
+	ret = phy_write(phydev, AT803X_DEBUG_DATA,
+			(phy_read(phydev, AT803X_DEBUG_DATA) | AT8033_DEBUG_SEL_1P8_EN));
+	if (ret)
+		return ret;
+#endif
+#ifdef CONFIG_AR8033_DISABLE_EEE
+	ret = phy_write(phydev, AT803X_MMD_ACCESS_CONTROL, 0x7);
+	ret = phy_write(phydev, AT803X_MMD_ACCESS_CONTROL_DATA, AT8033_EEE_ADVERT);
+	phy_write(phydev, AT803X_MMD_ACCESS_CONTROL, 0x4007);
+	phy_read(phydev, AT803X_MMD_ACCESS_CONTROL_DATA);
+	/* disable 1000BT/100BT EEE by default */
+	phy_write(phydev, AT803X_MMD_ACCESS_CONTROL_DATA, 0x0);
+	phy_read(phydev, AT803X_MMD_ACCESS_CONTROL_DATA);
+#endif
 	return 0;
 }
 
@@ -407,8 +440,10 @@ static struct phy_driver at803x_driver[] = {
 	.config_init		= at803x_config_init,
 	.set_wol		= at803x_set_wol,
 	.get_wol		= at803x_get_wol,
+#ifndef CONFIG_ARCH_ALPINE
 	.suspend		= at803x_suspend,
 	.resume			= at803x_resume,
+#endif
 	.features		= PHY_GBIT_FEATURES,
 	.flags			= PHY_HAS_INTERRUPT,
 	.aneg_done		= at803x_aneg_done,

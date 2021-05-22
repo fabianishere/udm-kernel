@@ -26,6 +26,12 @@ config MDIO_BCM_IPROC
 	  This module provides a driver for the MDIO busses found in the
 	  Broadcom iProc SoC's.
 
+config AR8033_DISABLE_EEE
+       bool "Disable 1000BT/100BT EEE advertisement"
+       depends on AT803X_PHY
+       ---help---
+         Disable EEE advertisement for 1000BT/100BT
+
 config MDIO_BCM_UNIMAC
 	tristate "Broadcom UniMAC MDIO bus controller"
 	depends on HAS_IOMEM
@@ -210,6 +216,100 @@ config LED_TRIGGER_PHY
 		for any speed known to the PHY.
 
 
+comment "Switch configuration API + drivers"
+
+config SWCONFIG
+	tristate "Switch configuration API"
+	---help---
+	  Switch configuration API using netlink. This allows
+	  you to configure the VLAN features of certain switches.
+
+config SWCONFIG_UBNT_EXT
+	bool "Switch configuration ubnt extension"
+	depends on SWCONFIG
+	default y
+	---help---
+	  ubnt swconfig extension
+
+config SWCONFIG_LEDS
+	bool "Switch LED trigger support"
+	depends on (SWCONFIG && LEDS_TRIGGERS)
+
+config UBNT_ACL
+	bool "Ubiquiti's ACL abstraction for PHY drivers"
+
+config ADM6996_PHY
+	tristate "Driver for ADM6996 switches"
+	select SWCONFIG
+	---help---
+	  Currently supports the ADM6996FC and ADM6996M switches.
+	  Support for FC is very limited.
+
+config AR8216_PHY
+	tristate "Driver for Atheros AR8216 switches"
+	select ETHERNET_PACKET_MANGLE
+	select SWCONFIG
+	select UBNT_ACL
+
+config AR8216_PHY_LEDS
+	bool "Atheros AR8216 switch LED support"
+	depends on (AR8216_PHY && LEDS_CLASS)
+
+source "drivers/net/phy/b53/Kconfig"
+
+config IP17XX_PHY
+	tristate "Driver for IC+ IP17xx switches"
+	select SWCONFIG
+
+config MVSWITCH_PHY
+	tristate "Driver for Marvell 88E6060 switches"
+	select ETHERNET_PACKET_MANGLE
+
+config MVSW61XX_PHY
+	tristate "Driver for Marvell 88E6171/6172 switches"
+	select SWCONFIG
+
+config PSB6970_PHY
+	tristate "Lantiq XWAY Tantos (PSB6970) Ethernet switch"
+	select SWCONFIG
+	select ETHERNET_PACKET_MANGLE
+
+config RTL8306_PHY
+	tristate "Driver for Realtek RTL8306S switches"
+	select SWCONFIG
+
+config RTL8366_SMI
+	tristate "Driver for the RTL8366 SMI interface"
+	depends on GPIOLIB
+	---help---
+	  This module implements the SMI interface protocol which is used
+	  by some RTL8366 ethernet switch devices via the generic GPIO API.
+
+if RTL8366_SMI
+
+config RTL8366_SMI_DEBUG_FS
+	bool "RTL8366 SMI interface debugfs support"
+        depends on DEBUG_FS
+        default n
+
+config RTL8366S_PHY
+	tristate "Driver for the Realtek RTL8366S switch"
+	select SWCONFIG
+
+config RTL8366RB_PHY
+	tristate "Driver for the Realtek RTL8366RB switch"
+	select SWCONFIG
+
+config RTL8367_PHY
+	tristate "Driver for the Realtek RTL8367R/M switches"
+	select SWCONFIG
+
+config RTL8367B_PHY
+	tristate "Driver fot the Realtek RTL8367R-VB switch"
+	select SWCONFIG
+
+endif # RTL8366_SMI
+
 comment "MII PHY device drivers"
 
 config SFP
@@ -217,6 +317,12 @@ config SFP
 	depends on I2C && PHYLINK
 	depends on HWMON || HWMON=n
 	select MDIO_I2C
+
+config AT8033_SEL_1P8
+	bool "RGMII voltage level setup"
+	depends on AT803X_PHY
+	---help---
+	  Enable 1V8 voltage level for RGMII
 
 config AMD_PHY
 	tristate "AMD PHYs"
@@ -436,6 +542,17 @@ config XILINX_GMII2RGMII
 	  This driver support xilinx GMII to RGMII IP core it provides
 	  the Reduced Gigabit Media Independent Interface(RGMII) between
 	  Ethernet physical media devices and the Gigabit Ethernet controller.
+
+config RTL83XX_API
+	bool "RTL83XX ASIC drivers for RTL83xx family"
+	---help---
+	  This module contains ASIC driver for RTL83xx family.
+
+config RTL8370_PHY
+	bool "Driver for the Realtek RTL8370MB switch"
+	select SWCONFIG 
+	select RTL83XX_API
+	select UBNT_ACL
 
 endif # PHYLIB
 

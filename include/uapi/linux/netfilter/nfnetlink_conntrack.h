@@ -55,6 +55,7 @@ enum ctattr_type {
 	CTA_LABELS,
 	CTA_LABELS_MASK,
 	CTA_SYNPROXY,
+	CTA_DPI,
 	__CTA_MAX
 };
 #define CTA_MAX (__CTA_MAX - 1)
@@ -275,5 +276,16 @@ enum ctattr_expect_stats {
 	__CTA_STATS_EXP_MAX,
 };
 #define CTA_STATS_EXP_MAX (__CTA_STATS_EXP_MAX - 1)
+
+enum ctattr_dpi {
+	CTA_DPI_UNSPEC,
+	CTA_DPI_PROTO,
+	CTA_DPI_DNS,
+	CTA_DPI_DNS_LEN,
+	CTA_DPI_DOMAIN_NAME,
+	CTA_DPI_DOMAIN_NAME_LEN,
+	__CTA_DPI_MAX,
+};
+#define CTA_DPI_MAX (__CTA_DPI_MAX - 1)
 
 #endif /* _IPCONNTRACK_NETLINK_H */

@@ -243,7 +243,7 @@ static inline void spi_shutdown_chip(struct dw_spi *dws)
 struct dw_spi_chip {
 	u8 poll_mode;	/* 1 for controller polling mode */
 	u8 type;	/* SPI/SSP/MicroWire */
-	void (*cs_control)(u32 command);
+	void (*cs_control)(struct dw_spi *dws, u32 command);
 };
 
 extern void dw_spi_set_cs(struct spi_device *spi, bool enable);

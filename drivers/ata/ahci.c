@@ -42,6 +42,8 @@
 #include <linux/device.h>
 #include <linux/dmi.h>
 #include <linux/gfp.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 #include <linux/msi.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_cmnd.h>
@@ -49,6 +51,10 @@
 #include <linux/ahci-remap.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
 #include "ahci.h"
+#ifdef CONFIG_ARCH_ALPINE
+#include "al_hal_iofic.h"
+#include "al_hal_iofic_regs.h"
+#endif
 
 #define DRV_NAME	"ahci"
 #define DRV_VERSION	"3.0"
@@ -72,6 +78,7 @@ enum board_ids {
 	board_ahci_yes_fbs,
 
 	/* board IDs for specific chipsets in alphabetical order */
+	board_ahci_alpine,
 	board_ahci_avn,
 	board_ahci_mcp65,
 	board_ahci_mcp77,
@@ -105,6 +112,8 @@ static void ahci_mcp89_apple_enable(struct pci_dev *pdev);
 static bool is_mcp89_apple(struct pci_dev *pdev);
 static int ahci_p5wdh_hardreset(struct ata_link *link, unsigned int *class,
 				unsigned long deadline);
+static int ahci_al_hardreset(struct ata_link *link, unsigned int *class,
+				 unsigned long deadline);
 #ifdef CONFIG_PM
 static int ahci_pci_device_runtime_suspend(struct device *dev);
 static int ahci_pci_device_runtime_resume(struct device *dev);
@@ -184,6 +193,13 @@ static const struct ata_port_info ahci_port_info[] = {
 		.port_ops	= &ahci_ops,
 	},
 	/* by chipsets */
+	[board_ahci_alpine] = {
+		AHCI_HFLAGS	(AHCI_HFLAG_NO_PMP | AHCI_HFLAG_AL_MSIX | AHCI_HFLAG_MULTI_MSI),
+		.flags		= AHCI_FLAG_COMMON,
+		.pio_mask	= ATA_PIO4,
+		.udma_mask	= ATA_UDMA6,
+		.port_ops	= &ahci_ops,
+	},
 	[board_ahci_avn] = {
 		.flags		= AHCI_FLAG_COMMON,
 		.pio_mask	= ATA_PIO4,
@@ -433,6 +449,8 @@ static const struct pci_device_id ahci_pci_tbl[] = {
 	{ PCI_VDEVICE(ATI, 0x4394), board_ahci_sb700 }, /* ATI SB700/800 */
 	{ PCI_VDEVICE(ATI, 0x4395), board_ahci_sb700 }, /* ATI SB700/800 */
 
+	/* Annapurna Labs */
+	{ PCI_VDEVICE(ANNAPURNA_LABS, 0x0031), board_ahci_alpine }, /* 0031 */
 	/* AMD */
 	{ PCI_VDEVICE(AMD, 0x7800), board_ahci }, /* AMD Hudson-2 */
 	{ PCI_VDEVICE(AMD, 0x7900), board_ahci }, /* AMD CZ */
@@ -823,7 +841,6 @@ static int ahci_avn_hardreset(struct ata_link *link, unsigned int *class,
 	return rc;
 }
 
-
 #ifdef CONFIG_PM
 static void ahci_pci_disable_interrupts(struct ata_host *host)
 {
@@ -885,6 +902,9 @@ static int ahci_pci_device_resume(struct device *dev)
 	struct pci_dev *pdev = to_pci_dev(dev);
 	struct ata_host *host = pci_get_drvdata(pdev);
 	int rc;
+
+	if (al_ahci_sss_wa_needed(dev))
+		al_ahci_flr(pdev);
 
 	/* Apple BIOS helpfully mangles the registers on resume */
 	if (is_mcp89_apple(pdev))
@@ -1434,40 +1454,6 @@ static inline void ahci_gtf_filter_workaround(struct ata_host *host)
 {}
 #endif
 
-/*
- * On the Acer Aspire Switch Alpha 12, sometimes all SATA ports are detected
- * as DUMMY, or detected but eventually get a "link down" and never get up
- * again. When this happens, CAP.NP may hold a value of 0x00 or 0x01, and the
- * port_map may hold a value of 0x00.
- *
- * Overriding CAP.NP to 0x02 and the port_map to 0x7 will reveal all 3 ports
- * and can significantly reduce the occurrence of the problem.
- *
- * https://bugzilla.kernel.org/show_bug.cgi?id=189471
- */
-static void acer_sa5_271_workaround(struct ahci_host_priv *hpriv,
-				    struct pci_dev *pdev)
-{
-	static const struct dmi_system_id sysids[] = {
-		{
-			.ident = "Acer Switch Alpha 12",
-			.matches = {
-				DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
-				DMI_MATCH(DMI_PRODUCT_NAME, "Switch SA5-271")
-			},
-		},
-		{ }
-	};
-
-	if (dmi_check_system(sysids)) {
-		dev_info(&pdev->dev, "enabling Acer Switch Alpha 12 workaround\n");
-		if ((hpriv->saved_cap & 0xC734FF00) == 0xC734FF00) {
-			hpriv->port_map = 0x7;
-			hpriv->cap = 0xC734FF02;
-		}
-	}
-}
-
 #ifdef CONFIG_ARM64
 /*
  * Due to ERRATA#22536, ThunderX needs to handle HOST_IRQ_STAT differently.
@@ -1559,6 +1545,18 @@ static int ahci_init_msi(struct pci_dev *pdev, unsigned int n_ports,
 
 	if (hpriv->flags & AHCI_HFLAG_NO_MSI)
 		return -ENODEV;
+
+	if (al_ahci_enabled()) {
+		pr_debug("al pdev->vendor: %d anpa: %d\n", pdev->vendor,
+			 PCI_VENDOR_ID_ANNAPURNA_LABS);
+		if (pdev->vendor == PCI_VENDOR_ID_ANNAPURNA_LABS) {
+			nvec = al_init_msix_interrupts(pdev, n_ports, hpriv);
+			pr_debug("init msix interrupts returned: %d\n", nvec);
+			hpriv->get_irq_vector = ahci_get_irq_vector;
+			if (nvec > 0)
+				return nvec;
+		}
+	}
 
 	/*
 	 * If number of MSIs is less than number of ports then Sharing Last
@@ -1666,6 +1664,9 @@ static int ahci_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct ata_host *host;
 	int n_ports, i, rc;
 	int ahci_pci_bar = AHCI_PCI_BAR_STANDARD;
+#ifdef CONFIG_ARCH_ALPINE
+	struct device_node	*np;
+#endif
 
 	VPRINTK("ENTER\n");
 
@@ -1800,6 +1801,62 @@ static int ahci_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	ahci_set_em_messages(hpriv, &pi);
 
+#ifdef CONFIG_ARCH_ALPINE
+	for (i = 0; i < AHCI_MAX_PORTS; i++)
+		hpriv->led_gpio[i] = -1;
+
+	np = of_find_compatible_node(NULL, NULL, "annapurna-labs,al-sata-sw-leds");
+	if (np) {
+		int err;
+		struct device_node *child;
+		u32	domain;
+		u32	pci_bus;
+		u32	pci_dev;
+		u32	port;
+
+		for_each_child_of_node(np, child) {
+			err = of_property_read_u32(child, "pci_domain", &domain);
+			if (err)
+				continue;
+			if (domain != pci_domain_nr(pdev->bus))
+				continue;
+
+			err = of_property_read_u32(child, "pci_bus", &pci_bus);
+			if (err)
+				continue;
+			if (pci_bus != pdev->bus->number)
+				continue;
+
+			err = of_property_read_u32(child, "pci_dev", &pci_dev);
+			if (err)
+				continue;
+			if (pci_dev != PCI_SLOT(pdev->devfn))
+				continue;
+
+			err = of_property_read_u32(child, "port", &port);
+			if (err)
+				continue;
+
+			err = of_get_named_gpio(child, "gpios", 0);
+			if (IS_ERR_VALUE(err))
+				continue;
+
+			hpriv->led_gpio[port] = err;
+
+			err = gpio_request(hpriv->led_gpio[port], "sata led gpio");
+			if (err) {
+				dev_err(&pdev->dev, "al ahci gpio_request %d failed: %d\n",
+						hpriv->led_gpio[port], err);
+				continue;
+			}
+			gpio_direction_output(hpriv->led_gpio[port], 0);
+			hpriv->em_msg_type = EM_MSG_TYPE_LED;
+			pi.flags |= ATA_FLAG_EM | ATA_FLAG_SW_ACTIVITY;
+		}
+
+		of_node_put(np);
+	}
+#endif
 	if (ahci_broken_system_poweroff(pdev)) {
 		pi.flags |= ATA_FLAG_NO_POWEROFF_SPINDOWN;
 		dev_info(&pdev->dev,
@@ -1823,10 +1880,6 @@ static int ahci_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 		dev_info(&pdev->dev,
 			 "online status unreliable, applying workaround\n");
 	}
-
-
-	/* Acer SA5-271 workaround modifies private_data */
-	acer_sa5_271_workaround(hpriv, pdev);
 
 	/* CAP.NP sometimes indicate the index of the last enabled
 	 * port, at other times, that of the last possible port, so

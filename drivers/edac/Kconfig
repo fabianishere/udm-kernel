@@ -460,4 +460,22 @@ config EDAC_TI
 	  Support for error detection and correction on the
           TI SoCs.
 
+config EDAC_ALPINE_L1
+        tristate "Alpine L1 EDAC"
+        depends on ARCH_ALPINE
+        help
+          Support for Alpine chips AL7 L1 cache EDAC
+
+config EDAC_ALPINE_L2
+        tristate "Alpine L2 EDAC"
+        depends on ARCH_ALPINE
+        help
+          Support for Alpine chips AL7 L2 cache EDAC
+
+config EDAC_ALPINE_SYSTEM_FABRIC
+        tristate "Alpine EDAC System Fabric"
+        depends on ARCH_ALPINE
+        help
+          Support for Alpine chips System Fabric EDAC
+
 endif # EDAC
