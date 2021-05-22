@@ -94,8 +94,8 @@ else
 	packageversion=$version-$revision
 fi
 sourcename=$KDEB_SOURCENAME
-packagename=linux-image-$version
-kernel_headers_packagename=linux-headers-$version
+packagename=udm-kernel-$version
+kernel_headers_packagename=udm-headers-$version
 dbg_packagename=$packagename-dbg
 debarch=
 set_debarch
@@ -186,7 +186,7 @@ Description: Linux kernel headers for $version on $debarch
  .
  This is useful for people who need to build external modules
 
-Package: linux-libc-dev
+Package: udm-libc-dev
 Section: devel
 Provides: linux-kernel-headers
 Architecture: $debarch

@@ -40,7 +40,4 @@ export DEBMAIL="$DEBMAIL" DEBFULLNAME="$DEBFULLNAME"
 export LOCALVERSION=
 
 echo "Building kernel..."
-make -j"$jobs"
-
-echo "Packaging kernel..."
-make deb-pkg
+make -j"$jobs" bindeb-pkg
