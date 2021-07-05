@@ -4936,10 +4936,21 @@ skip_classify:
 		*ppt_prev = pt_prev;
 	} else {
 drop:
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+		switch (skb->protocol) {
+		case htons(ETH_P_LLDP):
+			atomic_long_inc(&skb->dev->rx_lldp_dropped);
+			break;
+		default:
+#endif
 		if (!deliver_exact)
 			atomic_long_inc(&skb->dev->rx_dropped);
 		else
 			atomic_long_inc(&skb->dev->rx_nohandler);
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+			break;
+		}
+#endif
 		kfree_skb(skb);
 		/* Jamal, now you will not able to escape explaining
 		 * me how you were going to use this. :-)
@@ -9069,6 +9080,9 @@ struct rtnl_link_stats64 *dev_get_stats(struct net_device *dev,
 	storage->rx_dropped += (unsigned long)atomic_long_read(&dev->rx_dropped);
 	storage->tx_dropped += (unsigned long)atomic_long_read(&dev->tx_dropped);
 	storage->rx_nohandler += (unsigned long)atomic_long_read(&dev->rx_nohandler);
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+	storage->rx_lldp_dropped += atomic_long_read(&dev->rx_lldp_dropped);
+#endif
 	return storage;
 }
 EXPORT_SYMBOL(dev_get_stats);

@@ -186,6 +186,9 @@ struct net_device_stats {
 	unsigned long	tx_window_errors;
 	unsigned long	rx_compressed;
 	unsigned long	tx_compressed;
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+	unsigned long	rx_lldp_dropped;
+#endif
 };
 
 
@@ -1795,6 +1798,9 @@ struct net_device {
 	atomic_long_t		rx_dropped;
 	atomic_long_t		tx_dropped;
 	atomic_long_t		rx_nohandler;
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+	atomic_long_t		rx_lldp_dropped;
+#endif
 
 	/* Stats to monitor link on/off, flapping */
 	atomic_t		carrier_up_count;

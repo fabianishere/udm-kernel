@@ -5158,7 +5158,8 @@ static void process_adv_report(struct hci_dev *hdev, u8 type, bdaddr_t *bdaddr,
 
 	/* Adjust for actual length */
 	if (len != real_len) {
-		bt_dev_err_ratelimited(hdev, "advertising data len corrected");
+		if (printk_ratelimit())
+			bt_dev_dbg(hdev, "advertising data len corrected");
 		len = real_len;
 	}
 

@@ -608,6 +608,9 @@ NETSTAT_ENTRY(tx_window_errors);
 NETSTAT_ENTRY(rx_compressed);
 NETSTAT_ENTRY(tx_compressed);
 NETSTAT_ENTRY(rx_nohandler);
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+NETSTAT_ENTRY(rx_lldp_dropped);
+#endif
 
 static struct attribute *netstat_attrs[] __ro_after_init = {
 	&dev_attr_rx_packets.attr,
@@ -634,6 +637,9 @@ static struct attribute *netstat_attrs[] __ro_after_init = {
 	&dev_attr_rx_compressed.attr,
 	&dev_attr_tx_compressed.attr,
 	&dev_attr_rx_nohandler.attr,
+#ifdef CONFIG_LLDP_RX_DROP_COUNTER
+	&dev_attr_rx_lldp_dropped.attr,
+#endif
 	NULL
 };
 
