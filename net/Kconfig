@@ -119,6 +119,15 @@ config NETWORK_PHY_TIMESTAMPING
 
 	  If you are unsure how to answer this question, answer N.
 
+config LLDP_RX_DROP_COUNTER
+	bool "Separate counter for dropped lldp Rx packets"
+	default y
+	help
+	  UBNT hotfix for UDM-177.
+	  LLDP frames will increase 'rx_drop' count for switch0.1 on UDM,
+	  even if try to read them with lldpd exclusively on this interface.
+	  Users DDoS tech support about "why the device drops MY traffic"
+
 menuconfig NETFILTER
 	bool "Network packet filtering framework (Netfilter)"
 	---help---

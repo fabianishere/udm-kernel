@@ -4329,7 +4329,7 @@ al_mod_eth_setup_tx_resources(struct al_mod_eth_adapter *adapter, int qid)
 
 	size = sizeof(struct al_mod_eth_tx_buffer) * tx_ring->sw_count;
 
-	tx_ring->tx_buffer_info = kzalloc(size, GFP_KERNEL);
+	tx_ring->tx_buffer_info = vzalloc(size);
 	if (!tx_ring->tx_buffer_info)
 		return -ENOMEM;
 
@@ -4371,7 +4371,7 @@ al_mod_eth_free_tx_resources(struct al_mod_eth_adapter *adapter, int qid)
 
 	netdev_dbg(adapter->netdev, "%s qid %d\n", __func__, qid);
 
-	kfree(tx_ring->tx_buffer_info);
+	vfree(tx_ring->tx_buffer_info);
 	tx_ring->tx_buffer_info = NULL;
 
 	/* if not set, then don't free */
@@ -4451,7 +4451,7 @@ al_mod_eth_setup_rx_resources(struct al_mod_eth_adapter *adapter, unsigned int q
 	/* alloc extra element so in rx path we can always prefetch rx_info + 1*/
 	size += 1;
 
-	rx_ring->rx_buffer_info = kzalloc(size, GFP_KERNEL);
+	rx_ring->rx_buffer_info = vzalloc(size);
 	if (!rx_ring->rx_buffer_info)
 		return -ENOMEM;
 
@@ -4503,7 +4503,7 @@ al_mod_eth_free_rx_resources(struct al_mod_eth_adapter *adapter, unsigned int qi
 	struct al_mod_eth_ring *rx_ring = &adapter->rx_ring[qid];
 	struct al_mod_udma_q_params *q_params = &rx_ring->q_params;
 
-	kfree(rx_ring->rx_buffer_info);
+	vfree(rx_ring->rx_buffer_info);
 	rx_ring->rx_buffer_info = NULL;
 
 	/* if not set, then don't free */
@@ -7466,7 +7466,9 @@ static int al_mod_eth_close(struct net_device *netdev)
 
 	adapter->flags |= AL_ETH_FLAG_CLOSE_ONGOING;
 
-	cancel_delayed_work_sync(&adapter->link_status_task);
+	if (adapter->use_lm)
+		cancel_delayed_work_sync(&adapter->link_status_task);
+
 	cancel_work_sync(&adapter->reset_task);
 
 	if (adapter->use_lm) {
