@@ -33,6 +33,9 @@
 #include <linux/irq.h>
 #include <linux/of_irq.h>
 
+#include <linux/reboot.h>
+#include "watchdog_core.h"
+
 #if defined(CONFIG_UBNT_REBOOT_REASON)
 #include <linux/resvmem_reboot.h>
 #endif
@@ -262,6 +265,21 @@ static irqreturn_t sp805_wdt_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static int sp805_wdt_reboot_notifier(struct notifier_block *nb,
+				    unsigned long code, void *data)
+{
+	struct watchdog_device *wdd;
+	wdd = container_of(nb, struct watchdog_device, reboot_nb);
+	if (code == SYS_DOWN || code == SYS_HALT || code == SYS_POWER_OFF) {
+		if (watchdog_active(wdd)) {
+			if (wdd->ops->stop(wdd))
+				return NOTIFY_BAD;
+		}
+	}
+
+	return NOTIFY_DONE;
+}
+
 static int
 sp805_wdt_probe(struct amba_device *adev, const struct amba_id *id)
 {
@@ -308,6 +326,15 @@ sp805_wdt_probe(struct amba_device *adev, const struct amba_id *id)
 	watchdog_set_nowayout(&wdt->wdd, nowayout);
 	watchdog_set_drvdata(&wdt->wdd, wdt);
 	watchdog_set_restart_priority(&wdt->wdd, 128);
+
+	wdt->wdd.reboot_nb.notifier_call = sp805_wdt_reboot_notifier;
+	ret = register_reboot_notifier(&wdt->wdd.reboot_nb);
+	if (ret) {
+		pr_err("sp805 watchdog%d: Cannot register reboot notifier (%d)\n",
+		       wdt->wdd.id, ret);
+		watchdog_dev_unregister(&wdt->wdd);
+		return ret;
+	}
 
 	/*
 	 * If 'timeout-sec' devicetree property is specified, use that.
