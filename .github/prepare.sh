@@ -45,7 +45,7 @@ fi
 
 # Support local options
 if [ -f .github/config/config.local.udm ]; then
-    scripts/kconfig/merge_config.sh .config .github/config/config.local.udm
+    scripts/kconfig/merge_config.sh -m .config .github/config/config.local.udm
     CONFIG_FILES="$CONFIG_FILES .github/config/config.local.udm"
 fi
 
