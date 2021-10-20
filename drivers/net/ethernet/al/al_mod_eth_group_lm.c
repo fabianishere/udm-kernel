@@ -474,7 +474,7 @@ int al_mod_eth_group_lm_link_manage(struct al_mod_eth_group_lm_context *group_lm
 		if(atomic_cmpxchg(force_detection, true, false)) {
 			/* Enforce link down  */
 			group_lm_context->link_params[link_id].lm_mode_change_cb(handle,
-										*old_mode,
+										*new_mode,
 										AL_ETH_LM_MODE_DISCONNECTED);
 			/* Enforce SFP detection */
 			lm_context->mode = AL_ETH_LM_MODE_DISCONNECTED;

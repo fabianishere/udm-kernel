@@ -1305,7 +1305,8 @@ static void ahci_init_sw_activity(struct ata_link *link)
 	emp->saved_activity = emp->activity = 0;
 	emp->link = link;
 	emp->blink_policy = BLINK_ON;
-	timer_setup(&emp->timer, ahci_sw_activity_blink, 0);
+	if (!timer_pending(&emp->timer))
+		timer_setup(&emp->timer, ahci_sw_activity_blink, 0);
 
 	/* check our blink policy and set flag for link if it's enabled */
 	if (emp->blink_policy)
