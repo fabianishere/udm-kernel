@@ -422,8 +422,6 @@ static int al_mod_eth_sfp_detect(struct al_mod_eth_lm_context *lm_context,
 			/* 1G DA needs special serdes rx/tx params */
 			*new_mode = (*new_mode == AL_ETH_LM_MODE_10G_DA) ? AL_ETH_LM_MODE_1G_DA :
 									   AL_ETH_LM_MODE_1G;
-		} else if (lm_context->link_conf.speed > SPEED_1000) {
-			*new_mode = AL_ETH_LM_MODE_10G_OPTIC;
 		}
 	}
 	lm_context->mode = *new_mode;

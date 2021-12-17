@@ -18,10 +18,19 @@ int udp_sock_create6(struct net *net, struct udp_port_cfg *cfg,
 	struct sockaddr_in6 udp6_addr = {};
 	int err;
 	struct socket *sock = NULL;
+	int one = 1;
 
 	err = sock_create_kern(net, AF_INET6, SOCK_DGRAM, 0, &sock);
 	if (err < 0)
 		goto error;
+
+	if (cfg->reuse_addr && kernel_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one))) {
+		goto error;
+	}
+
+	if (cfg->reuse_port && kernel_setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, (char *)&one, sizeof(one))) {
+		goto error;
+	}
 
 	if (cfg->ipv6_v6only) {
 		int val = 1;

@@ -422,6 +422,12 @@ ctnetlink_dump_dpi(struct sk_buff *skb, const struct nf_conn *ct)
 		kfree(dpi->domain_name);
 		dpi->domain_name = NULL;
 	}
+	if (dpi->cat || dpi->app) {
+		if (nla_put_u8(skb, CTA_DPI_CAT, dpi->cat))
+			goto nla_put_failure;
+		if (nla_put_u16(skb, CTA_DPI_APP, dpi->app))
+			goto nla_put_failure;
+	}
 
 	nla_nest_end(skb, nest_count);
 
