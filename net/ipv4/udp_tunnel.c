@@ -15,10 +15,19 @@ int udp_sock_create4(struct net *net, struct udp_port_cfg *cfg,
 	int err;
 	struct socket *sock = NULL;
 	struct sockaddr_in udp_addr;
+	int one = 1;
 
 	err = sock_create_kern(net, AF_INET, SOCK_DGRAM, 0, &sock);
 	if (err < 0)
 		goto error;
+
+	if (cfg->reuse_addr && kernel_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one))) {
+		goto error;
+	}
+
+	if (cfg->reuse_port && kernel_setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, (char *)&one, sizeof(one))) {
+		goto error;
+	}
 
 	udp_addr.sin_family = AF_INET;
 	udp_addr.sin_addr = cfg->local_ip;

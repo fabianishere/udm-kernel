@@ -15,6 +15,8 @@ struct nf_conn_dpi {
 	uint16_t flags;
 	char *dns; // domain name set by dns
 	char *domain_name; // tls/http host header
+	uint8_t cat;
+	uint16_t app;
 };
 
 static inline struct nf_conn_dpi *nfct_dpi(const struct nf_conn *ct)

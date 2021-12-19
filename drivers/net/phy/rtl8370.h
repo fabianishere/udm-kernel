@@ -138,8 +138,12 @@ typedef enum _port_mapping {
 #define RTL8370_DEFAULT_PRIORITY (0)
 #define RTL8370_NUM_ACL_ENTRIES	(96)
 #define RTL8370_ARL_AGE_TIME_MAX_S (458)
-#define RTL8370_ARL_AGE_TIME_DEFAULT_S (300)
 
+#ifdef CONFIG_SWCONFIG_UBNT_EXT_SYNC_ARL
+#define RTL8370_ARL_AGE_TIME_DEFAULT_S (260)
+#else
+#define RTL8370_ARL_AGE_TIME_DEFAULT_S (300)
+#endif
 typedef rtk_uint32 rtl_arl_iter_t;
 
 typedef union {

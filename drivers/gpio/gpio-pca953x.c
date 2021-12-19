@@ -263,6 +263,23 @@ static int pca953x_read_regs_16(struct pca953x_chip *chip, int reg, u8 *val)
 	return ret;
 }
 
+static int pca957x_read_regs_16(struct pca953x_chip *chip, int reg, u8 *val)
+{
+	int ret;
+
+	ret = i2c_smbus_read_byte_data(chip->client, reg << 1);
+	if (ret < 0)
+		return ret;
+	val[0] = ret;
+
+	ret = i2c_smbus_read_byte_data(chip->client, (reg << 1) + 1);
+	if (ret < 0)
+		return ret;
+	val[1] = ret;
+
+	return (val[0] << 8) + val[1];
+}
+
 static int pca953x_read_regs_24(struct pca953x_chip *chip, int reg, u8 *val)
 {
 	int bank_shift = fls((chip->gpio_chip.ngpio - 1) / BANK_SZ);
@@ -886,11 +903,13 @@ static int pca953x_probe(struct i2c_client *client,
 		chip->write_regs = pca953x_write_regs_24;
 		chip->read_regs = pca953x_read_regs_24;
 	} else {
-		if (PCA_CHIP_TYPE(chip->driver_data) == PCA953X_TYPE)
+		if (PCA_CHIP_TYPE(chip->driver_data) == PCA953X_TYPE) {
 			chip->write_regs = pca953x_write_regs_16;
-		else
+			chip->read_regs = pca953x_read_regs_16;
+		} else {
 			chip->write_regs = pca957x_write_regs_16;
-		chip->read_regs = pca953x_read_regs_16;
+			chip->read_regs = pca957x_read_regs_16;
+		}
 	}
 
 	if (PCA_CHIP_TYPE(chip->driver_data) == PCA953X_TYPE)

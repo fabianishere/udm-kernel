@@ -231,6 +231,13 @@ config SWCONFIG_UBNT_EXT
 	---help---
 	  ubnt swconfig extension
 
+config SWCONFIG_UBNT_EXT_SYNC_ARL
+        bool "ubnt extension cache sync with switch chip"
+        depends on SWCONFIG_UBNT_EXT
+        default n
+        ---help---
+          ubnt extension cache sync with switch chip
+
 config SWCONFIG_LEDS
 	bool "Switch LED trigger support"
 	depends on (SWCONFIG && LEDS_TRIGGERS)

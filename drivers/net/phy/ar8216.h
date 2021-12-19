@@ -36,8 +36,12 @@
 #define AR8X16_MAX_PORTS	8
 
 #define AR8XXX_REG_ARL_CTRL_AGE_TIME_SECS	7
-#define AR8XXX_DEFAULT_ARL_AGE_TIME		300
 
+#ifdef CONFIG_SWCONFIG_UBNT_EXT_SYNC_ARL
+#define AR8XXX_DEFAULT_ARL_AGE_TIME		260
+#else
+#define AR8XXX_DEFAULT_ARL_AGE_TIME		300
+#endif
 /* Atheros specific MII registers */
 #define MII_ATH_MMD_ADDR		0x0d
 #define MII_ATH_MMD_DATA		0x0e
