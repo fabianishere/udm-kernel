@@ -711,6 +711,11 @@ al_mod_eth_fsm_table_init(struct al_mod_eth_adapter *adapter)
 		case AL_ETH_FSM_ENTRY_IPV4_NO_UDP_TCP:
 			val = AL_ETH_FSM_DATA_OUTER_2_TUPLE | AL_ETH_FSM_DATA_HASH_SEL;
 			break;
+		case AL_ETH_FSM_ENTRY_NOT_IP:
+			if (AL_ETH_FSM_ENTRY_TUNNELED(i) && !AL_ETH_FSM_ENTRY_INNER(i)) /*PPPoE*/ {
+				val = AL_ETH_FSM_DATA_INNER_4_TUPLE | AL_ETH_FSM_DATA_HASH_SEL;
+				break;
+			}
 		default:
 			val = (0 << AL_ETH_FSM_DATA_DEFAULT_Q_SHIFT |
 				((1 << adapter->udma_num) << AL_ETH_FSM_DATA_DEFAULT_UDMA_SHIFT));
@@ -952,6 +957,33 @@ static int al_mod_eth_board_of_sfp_probing(struct al_mod_eth_adapter *adapter,  
 	adapter->sfp_probe_10g = (of_property_match_string(np_10g, OF_PROP_NAME_PROBE_10G, "disabled") < 0);
 
 	of_node_put(np_10g);
+	return 0;
+}
+
+static int al_mod_eth_board_of_flow_ctrl(struct al_mod_eth_adapter *adapter, struct device_node *np)
+{
+	struct device_node *np_flow;
+	#define OF_NODE_NAME_FLOW_CTRL                   "flow-ctrl"
+	#define OF_PROP_NAME_PROBE_FLOW_CTRL_TX_PAUSE    "txpause"
+	#define OF_PROP_NAME_PROBE_FLOW_CTRL_RX_PAUSE    "rxpause"
+
+
+	if (NULL == adapter || NULL == np)
+		return -EINVAL;
+
+	np_flow = of_find_child_by_name(np, OF_NODE_NAME_FLOW_CTRL);
+	if (!np_flow) {
+		netdev_dbg(adapter->netdev, "Unable to find matching node (%s).", OF_NODE_NAME_FLOW_CTRL);
+		return -EINVAL;
+	}
+
+	if (of_property_match_string(np_flow, OF_PROP_NAME_PROBE_FLOW_CTRL_TX_PAUSE, "disabled") == 0)
+		adapter->link_config.flow_ctrl_supported &= ~AL_ETH_FLOW_CTRL_TX_PAUSE;
+
+	if (of_property_match_string(np_flow, OF_PROP_NAME_PROBE_FLOW_CTRL_RX_PAUSE, "disabled") == 0)
+		adapter->link_config.flow_ctrl_supported &= ~AL_ETH_FLOW_CTRL_RX_PAUSE;
+
+	of_node_put(np_flow);
 	return 0;
 }
 
@@ -1279,11 +1311,33 @@ static inline void
 al_mod_eth_flow_ctrl_init(struct al_mod_eth_adapter *adapter)
 {
 	uint8_t default_flow_ctrl;
+	struct device_node *np_device, *np_port;
+	char path[128];
 
 	default_flow_ctrl = AL_ETH_FLOW_CTRL_TX_PAUSE;
 	default_flow_ctrl |= AL_ETH_FLOW_CTRL_RX_PAUSE;
 
 	adapter->link_config.flow_ctrl_supported = default_flow_ctrl;
+
+	/* override the default flow control if the flow-ctrl node is exist in dts */
+	/* Find compatible OF node */
+	np_device = of_find_matching_node(NULL, al_mod_eth_of_table);
+	if (!np_device) {
+		netdev_info(adapter->netdev, "%s: Unable to find compatible OF node\n", __func__);
+		return;
+	}
+	/* Find port's OF node */
+	snprintf(path, sizeof(path), "port%d", adapter->port_num);
+	/* vv  np_device is going to be consumed by of_find_node_by_name vv */
+	np_port = of_find_node_by_name(np_device, path);
+	if (!np_port) {
+		netdev_info(adapter->netdev, "%s: Unable to find port's OF node.", __func__);
+		return;
+	}
+	al_mod_eth_board_of_flow_ctrl(adapter, np_port);
+
+	/* Free resources */
+	of_node_put(np_port);
 }
 
 static int

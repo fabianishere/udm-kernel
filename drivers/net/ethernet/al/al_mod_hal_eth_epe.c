@@ -157,6 +157,22 @@ static struct al_mod_eth_epe_p_reg_entry eth_v3_default_comp_table[AL_ETH_EPE_TA
 	AL_ETH_EPE_V3_P_COMP_ENTRY(AL_ETH_V3_P_COMP_DATA(AL_ETH_V3_P_COMP_DATA_DATA_2(0x00, 0x3), 0x1100),
 				AL_ETH_V3_P_COMP_MASK(AL_ETH_V3_P_COMP_MASK_DATA_2(0x00, 0x7), 0xFF00),
 				AL_ETH_V3_P_COMP_CTRL(1, EC_EPE_P_COMP_CTRL_CMD_EQ, EC_EPE_P_COMP_CTRL_CMD_EQ, 0x0D)),
+	/* 14 */
+	AL_ETH_EPE_V3_P_COMP_ENTRY(AL_ETH_V3_P_COMP_DATA(AL_ETH_V3_P_COMP_DATA_DATA_2(0x00, 0x3), 0x2F00),
+				AL_ETH_V3_P_COMP_MASK(AL_ETH_V3_P_COMP_MASK_DATA_2(0x00, 0x7), 0xFF00),
+				AL_ETH_V3_P_COMP_CTRL(1, EC_EPE_P_COMP_CTRL_CMD_EQ, EC_EPE_P_COMP_CTRL_CMD_EQ, 0x0E)),
+	/* 15 */
+	AL_ETH_EPE_V3_P_COMP_ENTRY(AL_ETH_V3_P_COMP_DATA(AL_ETH_V3_P_COMP_DATA_DATA_2(0x00, 0x3), 0x2900),
+				AL_ETH_V3_P_COMP_MASK(AL_ETH_V3_P_COMP_MASK_DATA_2(0x00, 0x7), 0xFF00),
+				AL_ETH_V3_P_COMP_CTRL(1, EC_EPE_P_COMP_CTRL_CMD_EQ, EC_EPE_P_COMP_CTRL_CMD_EQ, 0x0F)),
+	/* 16 */
+	AL_ETH_EPE_V3_P_COMP_ENTRY(AL_ETH_V3_P_COMP_DATA(AL_ETH_V3_P_COMP_DATA_DATA_2(0x00, 0x1), 0x05dc),
+				AL_ETH_V3_P_COMP_MASK(AL_ETH_V3_P_COMP_MASK_DATA_2(0x00, 0x7), 0xFFFF),
+				AL_ETH_V3_P_COMP_CTRL(1, EC_EPE_P_COMP_CTRL_CMD_EQ, EC_EPE_P_COMP_CTRL_CMD_EQ, 0x10)),
+	/* 17 */
+	AL_ETH_EPE_V3_P_COMP_ENTRY(AL_ETH_V3_P_COMP_DATA(AL_ETH_V3_P_COMP_DATA_DATA_2(0x00, 0x1), 0x8864),
+				AL_ETH_V3_P_COMP_MASK(AL_ETH_V3_P_COMP_MASK_DATA_2(0x00, 0x7), 0xFFFF),
+				AL_ETH_V3_P_COMP_CTRL(1, EC_EPE_P_COMP_CTRL_CMD_EQ, EC_EPE_P_COMP_CTRL_CMD_EQ, 0x11)),
 	/* 31 - Default Last Entry - Undetected Protocol */
 	[AL_ETH_PROTO_ID_DEFAULT] =
 	AL_ETH_EPE_V3_P_COMP_ENTRY(AL_ETH_V3_P_COMP_DATA(AL_ETH_V3_P_COMP_DATA_DATA_2(0x00, 0x0), 0x0000),
@@ -497,6 +513,38 @@ static struct al_mod_eth_epe_control_entry eth_v3_default_ctrl_table[AL_ETH_EPE_
 	 .data[5] = (EC_EPE_ACT_DATA_6_NEXT_PARSE_DIS |
 		     EC_EPE_ACT_DATA_6_HDR_OFFSET_WR_PTR(0x00B) |
 		     EC_EPE_ACT_DATA_6_HDR_OFFSET_WR),
+	},
+	{/* Entry 14 */
+	 .data[0] = 0x280B042,
+	 .data[1] = 0x0,
+	 .data[2] = 0x0,
+	 .data[3] = 0x430400,
+	 .data[4] = 0x4040009,
+	 .data[5] = 0x0,
+	},
+	{/* Entry 15 */
+	 .data[0] = 0x2815580,
+	 .data[1] = 0x0,
+	 .data[2] = 0x0,
+	 .data[3] = 0x0,
+	 .data[4] = 0x4040005,
+	 .data[5] = 0x0,
+	},
+	{/* Entry 16 */
+	 .data[0] = 0x280B000,
+	 .data[1] = 0x0,
+	 .data[2] = 0x0,
+	 .data[3] = 0x0,
+	 .data[4] = 0x1,
+	 .data[5] = 0x400000,
+	},
+	{/* Entry 17 */
+	 .data[0] = 0x280B400,
+	 .data[1] = 0x0,
+	 .data[2] = 0x0,
+	 .data[3] = 0x800000,
+	 .data[4] = 0x4040003,
+	 .data[5] = 0x0,
 	},
 	[AL_ETH_PROTO_ID_DEFAULT] = {
 	 /* Entry 31 - Default last entry for undetected protocols - basically just end parsing */

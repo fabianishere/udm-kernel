@@ -3329,8 +3329,9 @@ static int al_mod_eth_flow_control_config_efc(struct al_mod_hal_eth_adapter *ada
 
 		/* in 1G mode, enable generating xon from ec fifo in hysteresis mode */
 		if (AL_ETH_IS_1G_MAC(adapter->mac_mode))
-			al_mod_reg_write32(&adapter->ec_regs_base->efc.xon,
-				EC_EFC_XON_MASK_2 | EC_EFC_XON_MASK_1);
+			if (params->gen_enable)
+				al_mod_reg_write32(&adapter->ec_regs_base->efc.xon,
+					EC_EFC_XON_MASK_2 | EC_EFC_XON_MASK_1);
 
 		/**
 		 * This loop configures the Xoff packets effect on UDMAs.

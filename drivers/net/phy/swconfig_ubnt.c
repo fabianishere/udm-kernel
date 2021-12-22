@@ -400,6 +400,38 @@ static inline int ubnt_arl_cache_iter_next(struct switch_dev *dev, struct uext_a
 /**
  * @brief Sync ARL cache
  *
+ * @param cache - ARL cache structure
+ */
+#ifdef CONFIG_SWCONFIG_UBNT_EXT_SYNC_ARL
+static inline void swconfig_uext_arl_cache_sync(struct uext_arl_cache *cache)
+{
+	struct uext_arl_cache_entry *entry_c;
+	struct list_head *c, *n;
+	int i = 0;
+
+	for (i = 0; i < UEXT_ARL_LIST_HASHSIZE; ++i) {
+		list_for_each_safe (c, n, &cache->table[i].list) {
+			entry_c = list_entry(c, struct uext_arl_cache_entry, list);
+
+			if (entry_c->flag == UEXT_ARL_CACHE_DELETABLE) {
+				list_del(c);
+				kfree(entry_c);
+				continue;
+			}
+
+			if (entry_c->flag == UEXT_ARL_CACHE_NOT_FOUND) {
+				entry_c->flag = UEXT_ARL_CACHE_DELETABLE;
+			} else {
+				entry_c->flag = UEXT_ARL_CACHE_NOT_FOUND;
+			}
+		}
+	}
+}
+#endif
+
+/**
+ * @brief Sync ARL cache
+ *
  * @param work workqueue structure
  */
 static void swconfig_uext_arl_cache_worker(struct work_struct *work)
@@ -470,6 +502,9 @@ static void swconfig_uext_arl_cache_worker(struct work_struct *work)
 			 */
 			if (0 == memcmp(&entry_it->lut_e, &entry, sizeof(entry_it->lut_e))) {
 				entry_it->last_seen = jiffies;
+#ifdef CONFIG_SWCONFIG_UBNT_EXT_SYNC_ARL
+				entry_it->flag = UEXT_ARL_CACHE_ALIVE;
+#endif
 				hit = true;
 				break;
 			}
@@ -488,6 +523,9 @@ static void swconfig_uext_arl_cache_worker(struct work_struct *work)
 			memcpy(&entry_it->lut_e, &entry, sizeof(entry_it->lut_e));
 			entry_it->last_seen = jiffies;
 			entry_it->first_add = jiffies;
+#ifdef CONFIG_SWCONFIG_UBNT_EXT_SYNC_ARL
+			entry_it->flag = UEXT_ARL_CACHE_ALIVE;
+#endif
 			list_add(&entry_it->list, &cache->table[idx].list);
 		}
 	}
@@ -500,6 +538,10 @@ static void swconfig_uext_arl_cache_worker(struct work_struct *work)
 		}
 		goto unlock_schedule;
 	}
+
+#ifdef CONFIG_SWCONFIG_UBNT_EXT_SYNC_ARL
+	swconfig_uext_arl_cache_sync(cache);
+#endif
 
 unlock_schedule:
 	mutex_unlock(&cache->lock);
