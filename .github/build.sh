@@ -16,11 +16,15 @@ EOF
 }
 
 jobs=$(nproc)
+no_deb=
 
-while getopts ":hj:" arg; do
+while getopts ":hj:q" arg; do
 case $arg in
     V)
         jobs=$OPTARG
+        ;;
+    q)
+        no_deb=y
         ;;
     h | *) # Display help.
         usage
@@ -39,5 +43,13 @@ export DEBMAIL="$DEBMAIL" DEBFULLNAME="$DEBFULLNAME"
 # Do not append plus to final version
 export LOCALVERSION=
 
+# Allow changing extra version
+export EXTRAVERSION="$EXTRAVERSION"
+
 echo "Building kernel..."
-make -j"$jobs" bindeb-pkg
+make -j"$jobs"
+
+if [ -z "$no_deb" ]; then
+    echo "Packaging kernel..."
+    make -j"$jobs" bindeb-pkg
+fi
