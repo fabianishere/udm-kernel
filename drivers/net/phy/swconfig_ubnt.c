@@ -106,7 +106,11 @@ static struct uext_arl_cache_entry *uext_arl_proc_cache_entry_next(struct uext_a
 				}
 
 				if (time_is_before_jiffies(entry->last_seen +
-							   (cache->age_time * HZ))) {
+							   (cache->age_time * HZ))
+#ifdef CONFIG_SWCONFIG_UBNT_EXT_SYNC_ARL
+					|| entry->flag == UEXT_ARL_CACHE_DELETABLE
+#endif
+					) {
 					list_del(it->np);
 					kfree(entry);
 				} else {
@@ -413,16 +417,17 @@ static inline void swconfig_uext_arl_cache_sync(struct uext_arl_cache *cache)
 		list_for_each_safe (c, n, &cache->table[i].list) {
 			entry_c = list_entry(c, struct uext_arl_cache_entry, list);
 
-			if (entry_c->flag == UEXT_ARL_CACHE_DELETABLE) {
-				list_del(c);
-				kfree(entry_c);
-				continue;
-			}
+			switch (entry_c->flag) {
+				case (UEXT_ARL_CACHE_ALIVE):
+					entry_c->flag = UEXT_ARL_CACHE_NOT_FOUND;
+					break;
 
-			if (entry_c->flag == UEXT_ARL_CACHE_NOT_FOUND) {
-				entry_c->flag = UEXT_ARL_CACHE_DELETABLE;
-			} else {
-				entry_c->flag = UEXT_ARL_CACHE_NOT_FOUND;
+				case (UEXT_ARL_CACHE_NOT_FOUND):
+					entry_c->flag = UEXT_ARL_CACHE_DELETABLE;
+					break;
+
+				default:
+					continue;
 			}
 		}
 	}
