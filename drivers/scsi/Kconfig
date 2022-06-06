@@ -94,6 +94,13 @@ config BLK_DEV_SD
 	  In this case, do not compile the driver for your SCSI host adapter
 	  (below) as a module either.
 
+config SCSI_UBNT_STATIC_BOOT_DEV
+	bool "UBNT static boot flash name"
+	depends on BLK_DEV_SD
+	---help---
+	  When the SCSI host type is an usb storage and the vendor name is "Generic ",
+	  this option will name a static disk name (/dev/boot) for that device.
+
 config CHR_DEV_ST
 	tristate "SCSI tape support"
 	depends on SCSI

@@ -221,6 +221,26 @@ int ubnt_acl_enable_set(struct acl_hw *hw, int enable);
  */
 int ubnt_mac_zero_addr(acl_mac_t *mac);
 
+/**
+ * @brief Parse the bit tuple and store result in as bitmask in `mask`.
+ *
+ * @param rule - value to be parsed.
+ * @param mask - stored result.
+ * @return char* - string after value or NULL on error.
+ * @note single quote tolerant.
+ */
+const char *acl_parse_bitmask(const char *rule, u32 *mask);
+
+/**
+ * @brief Parse the HEX/DEC value and store result in `value`.
+ *
+ * @param rule - value to be parsed, value starting with `0x` considered HEX.
+ * @param value - stored result.
+ * @return char* - string after value or NULL on error.
+ * @note single quote tolerant.
+ */
+const char *acl_parse_value(const char *rule, uint16_t *value);
+
 // same as std::isblank()
 static inline int isblank(int c)
 {

@@ -26,12 +26,13 @@
 #include <linux/of_device.h>
 #include <linux/leds.h>
 #include <linux/mdio.h>
+#include <linux/ctype.h>
 
 #include "ar8216.h"
 #include "ar8327.h"
 
 extern const struct ar8xxx_mib_desc ar8236_mibs[41];
-extern const struct switch_attr ar8xxx_sw_attr_vlan[2];
+extern const struct switch_attr ar8xxx_sw_attr_vlan[1];
 
 static u32
 ar8327_get_pad_cfg(struct ar8327_pad_cfg *cfg)
@@ -206,6 +207,31 @@ ar8327_phy_fixup(struct ar8xxx_priv *priv, int phy)
 }
 
 static int
+ar8327_sw_phy_write16(struct switch_dev *dev, int port, u8 reg, u16 value)
+{
+	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
+	int phyno = ar8327_portno_to_phyno(port);
+	if (phyno < 0)
+		return phyno;
+	return mdiobus_write(priv->mii_bus, phyno, reg, value);
+}
+
+static int
+ar8327_sw_phy_read16(struct switch_dev *dev, int port, u8 reg, u16 *value)
+{
+	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
+	int val;
+	int phyno = ar8327_portno_to_phyno(port);
+	if (phyno < 0)
+		return phyno;
+	val = mdiobus_read(priv->mii_bus, phyno, reg);
+	if (val < 0)
+		return val;
+	*value = val;
+	return 0;
+}
+
+static int
 ar8327_sw_set_port_link (struct switch_dev *sw_dev, int port,
 			     struct switch_port_link *link)
 {
@@ -214,47 +240,16 @@ ar8327_sw_set_port_link (struct switch_dev *sw_dev, int port,
 	int rc = 0;
 
 	/* don't allow to control MAC of CPU ports */
-	if(AR8337_HAS_NO_PHY(port)) {
+	if (AR8337_HAS_NO_PHY(port)) {
 		return -ENOTSUPP;
 	}
 
 	/* Handle PHY */
-	if((rc = switch_generic_set_link(sw_dev, port-1, link))) {
+	if ((rc = switch_generic_set_link(sw_dev, port, link))) {
 		return rc;
 	}
 
-	/* Handle MAC */
-#ifdef CONFIG_SWCONFIG_UBNT_EXT
-	if(!link->power_down)
-#endif
-	{
-		status = AR8216_PORT_STATUS_TXMAC | AR8216_PORT_STATUS_RXMAC;
-		if(link->aneg) {
-			status |= AR8216_PORT_STATUS_LINK_AUTO | AR8216_PORT_STATUS_FLOW_CONTROL;
-		} else {
-			switch (link->speed) {
-			case SWITCH_PORT_SPEED_10:
-				status |= AR8216_PORT_SPEED_10M;
-				break;
-			case SWITCH_PORT_SPEED_100:
-				status |= AR8216_PORT_SPEED_100M;
-				break;
-			case SWITCH_PORT_SPEED_1000:
-				status |= AR8216_PORT_SPEED_1000M;
-				break;
-			default:
-				return -ENOTSUPP;
-			}
-			status |= link->duplex ? AR8216_PORT_STATUS_DUPLEX : 0;
-			status |= link->rx_flow ? AR8216_PORT_STATUS_RXFLOW : 0;
-			status |= link->tx_flow ? AR8216_PORT_STATUS_TXFLOW : 0;
-		}
-	}
-
-	ar8xxx_write(priv, AR8327_REG_PORT_STATUS(port), 0);
-	msleep(100);
-	ar8xxx_write(priv, AR8327_REG_PORT_STATUS(port), status);
-
+	/* MAC can detect speed from PHY by default. */
 	return 0;
 }
 
@@ -1106,20 +1101,20 @@ ar8327_vtu_load_vlan(struct ar8xxx_priv *priv, u32 vid, u32 port_mask)
 
 	op = AR8327_VTU_FUNC1_OP_LOAD | (vid << AR8327_VTU_FUNC1_VID_S);
 	val = AR8327_VTU_FUNC0_VALID;
-	if (priv->use_ivl[vid])
+	if (priv->vt[vid].use_ivl)
 		val |= AR8327_VTU_FUNC0_IVL;
 
 	for (i = 0; i < AR8327_NUM_PORTS; i++) {
 		u32 mode;
 
-		if ((port_mask & BIT(i)) == 0)
-			mode = AR8327_VTU_FUNC0_EG_MODE_NOT;
-		else if (priv->vlan == 0)
+		if (priv->vlan == 0) // port VLAN, not VT
 			mode = AR8327_VTU_FUNC0_EG_MODE_KEEP;
-		else if ((priv->vlan_tagged & BIT(i)) || (priv->vlan_id[priv->pvid[i]] != vid))
+		else if (priv->vt[vid].tagged & BIT(i))
 			mode = AR8327_VTU_FUNC0_EG_MODE_TAG;
-		else
+		else if (priv->vt[vid].untagged & BIT(i))
 			mode = AR8327_VTU_FUNC0_EG_MODE_UNTAG;
+		else
+			mode = AR8327_VTU_FUNC0_EG_MODE_NOT;
 
 		val |= mode << AR8327_VTU_FUNC0_EG_MODE_S(i);
 	}
@@ -1132,7 +1127,7 @@ ar8327_setup_port(struct ar8xxx_priv *priv, int port, u32 members)
 	struct ar8327_data *data = priv->chip_data;
 	u32 t;
 	u32 egress, ingress;
-	u32 pvid = priv->vlan_id[priv->pvid[port]];
+	u32 pvid = priv->pvid[port];
 
 	egress = AR8327_PORT_VLAN1_OUT_MODE_UNTOUCH;
 
@@ -1261,22 +1256,27 @@ static int
 ar8327_sw_get_ports(struct switch_dev *dev, struct switch_val *val)
 {
 	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
-	u8 ports = priv->vlan_table[val->port_vlan];
+
+	u8 p_t = priv->vt[val->port_vlan].tagged;
+	u8 p_u = priv->vt[val->port_vlan].untagged;
 	int i;
 
 	val->len = 0;
-	for (i = 0; i < dev->ports; i++) {
-		struct switch_port *p;
+	for (i = 0; (p_t | p_u) >= (1 << i); i++) {
+		struct switch_port *p = &val->value.ports[val->len];
 
-		if (!(ports & (1 << i)))
-			continue;
-
-		p = &val->value.ports[val->len++];
-		p->id = i;
-		if ((priv->vlan_tagged & (1 << i)) || (priv->pvid[i] != val->port_vlan))
-			p->flags = (1 << SWITCH_PORT_FLAG_TAGGED);
-		else
-			p->flags = 0;
+		if ((p_t & (1 << i)) || (p_u & (1 << i))) {
+			if (p_t & (1 << i)) {
+				p->flags = (1 << SWITCH_PORT_FLAG_TAGGED);
+			} else {
+				if (priv->pvid[i] != val->port_vlan)
+					p->flags = (1 << SWITCH_PORT_FLAG_UNTAGGED);
+				else
+					p->flags = 0;
+			}
+			p->id = i;
+			val->len++;
+		}
 	}
 	return 0;
 }
@@ -1285,24 +1285,23 @@ static int
 ar8327_sw_set_ports(struct switch_dev *dev, struct switch_val *val)
 {
 	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
-	u8 *vt = &priv->vlan_table[val->port_vlan];
 	int i;
 
-	*vt = 0;
+	priv->vt[val->port_vlan].vlan_entry = 0;
 	for (i = 0; i < val->len; i++) {
 		struct switch_port *p = &val->value.ports[i];
 
 		if (p->flags & (1 << SWITCH_PORT_FLAG_TAGGED)) {
-			if (val->port_vlan == priv->pvid[p->id]) {
-				priv->vlan_tagged |= (1 << p->id);
-			}
+			priv->vt[val->port_vlan].tagged |= (1 << p->id);
+			priv->vt[val->port_vlan].untagged &= ~(1 << p->id);
 		} else {
-			priv->vlan_tagged &= ~(1 << p->id);
-			priv->pvid[p->id] = val->port_vlan;
+			priv->vt[val->port_vlan].untagged |= (1 << p->id);
+			priv->vt[val->port_vlan].tagged &= ~(1 << p->id);
+			if (!(p->flags & (1 << SWITCH_PORT_FLAG_UNTAGGED)))
+				priv->pvid[p->id] = val->port_vlan;
 		}
-
-		*vt |= 1 << p->id;
 	}
+
 	return 0;
 }
 
@@ -2248,6 +2247,203 @@ static void ar8327_acl_hw_destroy(struct acl_hw *hw)
 	}
 }
 
+static int
+ar8xxx_hw_get_arl_table(struct switch_dev *dev,
+			const struct switch_attr *attr,
+			struct switch_val *val)
+{
+#define ARL_TABLE_SIZE 2048
+	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
+	struct mii_bus *bus = priv->mii_bus;
+	char *buf = priv->arl_buf;
+	int i, k, n, rc;
+	int total = 0, len = sizeof(priv->arl_buf);
+	u16 r2, page;
+	u16 r1_func, r1_data0, r1_data1, r1_data2;
+	struct arl_table *arl;
+
+	arl = vmalloc(sizeof(struct arl_table) * ARL_TABLE_SIZE);
+	if (arl == NULL) {
+		pr_err("[ARL] OOM\n");
+		return -1;
+	}
+
+	mutex_lock(&priv->reg_mutex);
+	mutex_lock(&bus->mdio_lock);
+
+	split_addr(AR8327_REG_ATU_DATA0, &r1_data0, &r2, &page);
+	r2 |= 0x10;
+	r1_data1 = (AR8327_REG_ATU_DATA1 >> 1) & 0x1e;
+	r1_data2 = (AR8327_REG_ATU_DATA2 >> 1) & 0x1e;
+	r1_func  = (AR8327_REG_ATU_FUNC >> 1) & 0x1e;
+	/* all ATU registers are on the same page
+	 * therefore set page only once
+	 */
+	bus->write(bus, 0x18, 0, page);
+	wait_for_page_switch();
+	ar8327_wait_atu_ready(priv, r2, r1_func);
+	ar8xxx_mii_write32(priv, r2, r1_data0, 0);
+	ar8xxx_mii_write32(priv, r2, r1_data1, 0);
+	ar8xxx_mii_write32(priv, r2, r1_data2, 0);
+
+	// read whole bunch
+	for (i = 0; i < ARL_TABLE_SIZE; i++) {
+		ar8xxx_mii_write32(priv, r2, r1_func,
+				   AR8327_ATU_FUNC_OP_GET_NEXT |
+				   AR8327_ATU_FUNC_BUSY);
+		ar8327_wait_atu_ready(priv, r2, r1_func);
+
+		arl[total]._w[0] = ar8xxx_mii_read32(priv, r2, r1_data0);
+		arl[total]._w[1] = ar8xxx_mii_read32(priv, r2, r1_data1);
+		arl[total]._w[2] = ar8xxx_mii_read32(priv, r2, r1_data2);
+
+		if (!arl[total].status)
+			break;
+		total++;
+	}
+	mutex_unlock(&bus->mdio_lock);
+
+	for (i = 0, n = -1; i < total; i++) {
+		// skip hole
+		if (!arl[i].status) {
+			if (n == -1)
+				n = i;
+			continue;
+		}
+		// glue entries
+		for (k = i + 1; k < total; k++) {
+			if (!arl[k].status)
+				continue;
+			if (!memcmp(arl[i].mac, arl[k].mac, 6) &&
+				arl[i].vid == arl[k].vid) {
+				arl[k].status = 0;
+				arl[i].portmap |= arl[k].portmap;
+			}
+		}
+		// pack entries
+		if (n >= 0) {
+			arl[n] = arl[i];
+			arl[i].status = 0;
+			n++;
+		}
+	}
+	if (n >= 0) // n < 0 -> all entries are unique
+		total = n;
+
+	rc = snprintf(buf, len, "ARL table\n");
+	for (i = 0; i < total; i++) {
+		if (rc <= 0 || len < 64) {
+			*buf = '\0';
+			break;
+		}
+		buf += rc;
+		len -= rc;
+
+		for (k = 0; k < AR8327_NUM_PORTS; k++) {
+			if (arl[i].portmap & (1 << k))
+				*buf++ = '0' + k;
+			else
+				*buf++ = '-';
+		}
+		len -= k;
+		rc = snprintf(buf, len, " %02x:%02x:%02x:%02x:%02x:%02x %d\n",
+				arl[i].mac[5], arl[i].mac[4], arl[i].mac[3],
+				arl[i].mac[2], arl[i].mac[1], arl[i].mac[0],
+				arl[i].vid);
+	}
+	val->value.s = priv->arl_buf;
+	val->len = sizeof(priv->arl_buf) - len;
+
+	mutex_unlock(&priv->reg_mutex);
+	vfree(arl);
+	return 0;
+}
+
+static int
+ar8xxx_hw_eddit_arl_table(struct switch_dev *dev,
+			const struct switch_attr *attr,
+			struct switch_val *val)
+{
+	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
+	struct mii_bus *bus = priv->mii_bus;
+	const char *cmd = val->value.s;
+	u16 r2, page;
+	u16 r1_func, r1_data0, r1_data1, r1_data2;
+	u32 ports;
+	struct arl_table arl = {._w = {0x00, 0x00, 0x00}};
+	struct atu_func_reg afr = {._w = 0x00};
+
+	while (cmd) {
+		while (isblank(*cmd))
+			cmd++;
+		if (!*cmd) // EOF
+			break;
+
+		if (!memcmp(cmd, "add", strlen("add"))) {
+			cmd += strlen("add");
+			afr.at_func = 0x2;
+			arl.status = 7; // max age time, but not static
+		} else if (!memcmp(cmd, "rem", strlen("rem"))) {
+			cmd += strlen("rem");
+			afr.at_func = 0x3;
+		} else if (!memcmp(cmd, "flush", strlen("flush"))) {
+			cmd += strlen("flush");
+			afr.at_func = 0x1;
+		} else if (!memcmp(cmd, "ports", strlen("ports"))) {
+			cmd += strlen("ports");
+			cmd = acl_parse_bitmask(cmd, &ports);
+			arl.portmap = ports;
+		}
+		else if (!memcmp(cmd, "mac", strlen("mac"))) {
+			cmd += strlen("mac");
+			if (sscanf(cmd, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx",
+				&arl.mac[5], &arl.mac[4], &arl.mac[3],
+				&arl.mac[2], &arl.mac[1], &arl.mac[0]) != 6) {
+				cmd = NULL;
+				break;
+			}
+			cmd = strchr(cmd, ':');
+			while (isgraph(*cmd))
+				cmd++;
+		}
+		else if (!memcmp(cmd, "vid", strlen("vid"))) {
+			uint16_t vid;
+			cmd += strlen("vid");
+			cmd = acl_parse_value(cmd, &vid);
+			arl.vid = vid;
+		} else {
+			pr_err("[ARL] Unknown cmd: '%s'\n", cmd);
+			return -1;
+		}
+	}
+	if (cmd == NULL || afr.at_func == 0x0) {
+		pr_err("[ARL] Failed to parse: '%s'\n", val->value.s);
+		return -1;
+	}
+	arl.svl = 0; // IVL
+	afr.busy = 1;
+
+	split_addr(AR8327_REG_ATU_DATA0, &r1_data0, &r2, &page);
+	r2 |= 0x10;
+	r1_data1 = (AR8327_REG_ATU_DATA1 >> 1) & 0x1e;
+	r1_data2 = (AR8327_REG_ATU_DATA2 >> 1) & 0x1e;
+	r1_func  = (AR8327_REG_ATU_FUNC >> 1) & 0x1e;
+	/* all ATU registers are on the same page
+	 * therefore set page only once
+	 */
+	mutex_lock(&bus->mdio_lock);
+	bus->write(bus, 0x18, 0, page);
+	wait_for_page_switch();
+	ar8327_wait_atu_ready(priv, r2, r1_func);
+	ar8xxx_mii_write32(priv, r2, r1_data0, arl._w[0]);
+	ar8xxx_mii_write32(priv, r2, r1_data1, arl._w[1]);
+	ar8xxx_mii_write32(priv, r2, r1_data2, arl._w[2]);
+	ar8xxx_mii_write32(priv, r2, r1_func, afr._w); // commit
+
+	mutex_unlock(&bus->mdio_lock);
+	return 0;
+}
+
 static const struct switch_attr ar8327_sw_attr_globals[] = {
 	{
 		.type = SWITCH_TYPE_NOVAL,
@@ -2297,9 +2493,9 @@ static const struct switch_attr ar8327_sw_attr_globals[] = {
 	{
 		.type = SWITCH_TYPE_STRING,
 		.name = "arl_table",
-		.description = "Get ARL table",
-		.set = NULL,
-		.get = ar8xxx_sw_get_arl_table,
+		.description = "Get/Set ARL table",
+		.set = ar8xxx_hw_eddit_arl_table,
+		.get = ar8xxx_hw_get_arl_table,
 	},
 	{
 		.type = SWITCH_TYPE_NOVAL,
@@ -2351,6 +2547,10 @@ static const struct switch_attr ar8327_sw_attr_globals[] = {
 		.get = ar8327_sw_get_acl,
 		.max = 1
 	},
+#if 0
+/* HW IGMP Snooping will de-header VLAN from IGMP Reports, which will result
+ * in non-working IGMP Proxy.
+ */
 	{
 		.type = SWITCH_TYPE_INT,
 		.name = "igmp_snooping",
@@ -2359,6 +2559,7 @@ static const struct switch_attr ar8327_sw_attr_globals[] = {
 		.get = ar8327_sw_get_igmp_snooping,
 		.max = 1
 	},
+#endif
 	{
 		.type = SWITCH_TYPE_INT,
 		.name = "igmp_v3",
@@ -2468,7 +2669,8 @@ static const struct switch_dev_ops ar8327_sw_ops = {
 	},
 #endif
 	.set_port_link = ar8327_sw_set_port_link,
-	.phy_write16 = ar8xxx_sw_phy_write16,
+	.phy_write16 = ar8327_sw_phy_write16,
+	.phy_read16 = ar8327_sw_phy_read16,
 };
 
 /**

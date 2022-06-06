@@ -256,6 +256,50 @@ static struct device_attribute dev_attr_sfp_probe_10g = {
 	.store = al_mod_eth_store_sfp_probe_10g,
 };
 
+static ssize_t al_mod_eth_show_sfp_enhanced_link_detection(struct device *dev, struct device_attribute *attr,
+					 char *buf)
+{
+	struct al_mod_eth_adapter *adapter = dev_get_drvdata(dev);
+
+	if (NULL == adapter) {
+		dev_warn(dev, "%s drvdata are not initialized\n", __func__);
+		return -EINVAL;
+	}
+
+	return sprintf(buf, "%d\n", !!adapter->sfp_enhanced_link_detection);
+}
+
+static ssize_t al_mod_eth_store_sfp_enhanced_link_detection(struct device *dev, struct device_attribute *attr,
+					  const char *buf, size_t len)
+{
+	struct al_mod_eth_adapter *adapter = dev_get_drvdata(dev);
+	unsigned long enable;
+	int err;
+
+	if (NULL == adapter) {
+		dev_warn(dev, "%s drvdata are not initialized\n", __func__);
+		return -EINVAL;
+	}
+
+
+	err = kstrtoul(buf, 10, &enable);
+	if (err < 0)
+		return err;
+
+	adapter->sfp_enhanced_link_detection = !!enable;
+
+	if (adapter->up)
+		dev_warn(dev, "%s this action will take place in the next activation (up)\n",
+			 __func__);
+	return len;
+}
+
+static struct device_attribute dev_attr_sfp_enhanced_link_detection = {
+	.attr = { .name = "sfp_enhanced_link_detection", .mode = (S_IRUGO | S_IWUSR) },
+	.show = al_mod_eth_show_sfp_enhanced_link_detection,
+	.store = al_mod_eth_store_sfp_enhanced_link_detection,
+};
+
 static ssize_t al_mod_eth_store_force_1000_base_x(struct device *dev,
 					      struct device_attribute *attr,
 					      const char *buf, size_t len)
@@ -1306,6 +1350,9 @@ int al_mod_eth_sysfs_init(
 	if (device_create_file(dev, &dev_attr_sfp_probe_10g))
 		dev_info(dev, "failed to create sfp_probe_10g sysfs entry");
 
+	if (device_create_file(dev, &dev_attr_sfp_enhanced_link_detection))
+		dev_info(dev, "failed to create dev_attr_sfp_enhanced_link_detection sysfs entry");
+
 	if (device_create_file(dev, &dev_attr_force_1000_base_x))
 		dev_info(dev, "failed to create force_1000_base_x sysfs entry");
 
@@ -1428,6 +1475,7 @@ void al_mod_eth_sysfs_terminate(
 	device_remove_file(dev, &dev_attr_link_training_enable);
 	device_remove_file(dev, &dev_attr_sfp_probe_1g);
 	device_remove_file(dev, &dev_attr_sfp_probe_10g);
+	device_remove_file(dev, &dev_attr_sfp_enhanced_link_detection);
 	device_remove_file(dev, &dev_attr_force_1000_base_x);
 	device_remove_file(dev, &dev_attr_intr_moderation_restore_default);
 	device_remove_file(dev, &dev_attr_flow_steer_config);

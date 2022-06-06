@@ -45,6 +45,7 @@
 #include <linux/u64_stats_sync.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
+#include "../../../gpio/gpiolib.h"
 #ifdef CONFIG_ARCH_ALPINE
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
@@ -509,6 +510,19 @@ struct al_mod_eth_epe_control_entry parser_control_udp_dis_end_of_parse_entry = 
 /* ports 1 & 3 are STD */
 static const int eth_v4_adv_port_map[4] = {0, 2, 4, 5};
 
+const char *al_mod_gpio_of_names[AL_ETH_GPIO_MAX] = {
+	"mod-def0",
+	"los",
+	"tx-fault",
+	"tx-disable",
+};
+const enum gpiod_flags al_mode_gpio_flags[AL_ETH_GPIO_MAX] = {
+	GPIOD_IN,
+	GPIOD_IN,
+	GPIOD_IN,
+	GPIOD_OUT_LOW,
+};
+
 /** Forward declarations */
 #ifdef CONFIG_ARCH_ALPINE
 static void al_mod_eth_serdes_mode_set(struct al_mod_eth_adapter *adapter);
@@ -936,27 +950,60 @@ static int al_mod_eth_board_of_led(struct al_mod_eth_adapter *adapter,  struct a
 	return 0;
 }
 
-static int al_mod_eth_board_of_sfp_probing(struct al_mod_eth_adapter *adapter,  struct al_mod_eth_board_params* params, struct device_node *np)
+static int al_mod_eth_board_of_lm(struct al_mod_eth_adapter *adapter,  struct al_mod_eth_board_params* params, struct device_node *np)
 {
-	struct device_node *np_10g;
-	#define OF_NODE_NAME_10G 	"10g-serial"
-	#define OF_PROP_NAME_PROBE_1G	"sfp_probe_1g"
-	#define OF_PROP_NAME_PROBE_10G	"sfp_probe_10g"
+	int i = 0, rc;
+	struct gpio_desc *desc;
+	char of_gpio_name[32];
+	enum of_gpio_flags;
+	struct device_node *np_lm;
+	#define OF_NODE_NAME_LM	"link_manager"
+	#define OF_PROP_NAME_PROBE_1G	"sfp-probe-1g"
+	#define OF_PROP_NAME_PROBE_10G	"sfp-probe-10g"
+	#define OF_PROP_NAME_ELINK_DET	"enhanced-link-detection"
 
 	if (NULL == adapter || NULL == np || NULL == params) {
 		return -EINVAL;
 	}
 
-	np_10g = of_find_child_by_name(np, OF_NODE_NAME_10G);
-	if (!np_10g) {
-		netdev_dbg(adapter->netdev, "Unable to find matching node (%s)\n", OF_NODE_NAME_10G);
+	np_lm = of_find_child_by_name(np, OF_NODE_NAME_LM);
+	if (!np_lm) {
+		netdev_dbg(adapter->netdev, "Unable to find matching node (%s)\n", OF_NODE_NAME_LM);
 		return -EINVAL;
 	}
 
-	adapter->sfp_probe_1g = (of_property_match_string(np_10g, OF_PROP_NAME_PROBE_1G, "disabled") < 0);
-	adapter->sfp_probe_10g = (of_property_match_string(np_10g, OF_PROP_NAME_PROBE_10G, "disabled") < 0);
+	adapter->sfp_enhanced_link_detection =
+		!(of_property_match_string(np_lm, OF_PROP_NAME_ELINK_DET, "enabled") < 0);
 
-	of_node_put(np_10g);
+	rc = 0;
+	for (i = 0; i < AL_ETH_GPIO_MAX; ++i) {
+		snprintf(of_gpio_name, sizeof(of_gpio_name), "%s-gpios", al_mod_gpio_of_names[i]);
+
+		desc = gpiod_get_from_of_node(np_lm, of_gpio_name, 0, al_mode_gpio_flags[i],
+					      al_mod_gpio_of_names[i]);
+		if (IS_ERR(desc))
+			break;
+
+		adapter->sfp_gpio_list[i] = desc;
+	}
+
+	if (IS_ERR(desc)) {
+		int err_idx = i;
+		pr_debug("Unable to get %s GPIO (rc %ld)\n", al_mod_gpio_of_names[i], PTR_ERR(desc));
+		adapter->sfp_gpio_init = AL_FALSE;
+		if (err_idx)
+			for (i = 0; i < err_idx; ++i)
+				gpiod_put(adapter->sfp_gpio_list[i]);
+
+	} else {
+		adapter->sfp_gpio_init = AL_TRUE;
+		pr_info("SFP GPIOs initialized successfully");
+	}
+
+	adapter->sfp_probe_1g = (of_property_match_string(np_lm, OF_PROP_NAME_PROBE_1G, "disabled") < 0);
+	adapter->sfp_probe_10g = (of_property_match_string(np_lm, OF_PROP_NAME_PROBE_10G, "disabled") < 0);
+
+	of_node_put(np_lm);
 	return 0;
 }
 
@@ -997,6 +1044,8 @@ static void al_mod_eth_board_params_of_defaults(struct al_mod_eth_adapter *adapt
 	adapter->sfp_probe_1g = true;
 	adapter->sfp_probe_10g = true;
 
+	/* Disable enhanced link detection by default */
+	adapter->sfp_enhanced_link_detection = false;
 }
 
 static int al_mod_eth_board_params_of_init(struct al_mod_eth_adapter *adapter, struct al_mod_eth_board_params* params) {
@@ -1030,7 +1079,7 @@ static int al_mod_eth_board_params_of_init(struct al_mod_eth_adapter *adapter, s
 	al_mod_eth_board_of_led(adapter, params, np_port);
 
 	/* LM SFP probing */
-	al_mod_eth_board_of_sfp_probing(adapter, params, np_port);
+	al_mod_eth_board_of_lm(adapter, params, np_port);
 
 	/* Free resources */
 	of_node_put(np_port);
@@ -6253,12 +6302,12 @@ static int al_mod_set_features(struct net_device *dev,
 #if defined(CONFIG_ARCH_ALPINE)
 
 static int al_mod_eth_i2c_data_read(void *context, uint8_t bus_id, uint8_t i2c_addr, uint8_t reg_addr,
-				uint8_t *val, size_t len, al_mod_bool seq)
+				uint8_t *val, size_t len, size_t block_size)
 {
 	struct i2c_adapter *i2c_adapter;
 	struct al_mod_eth_adapter *adapter = context;
 	struct i2c_msg msgs[2] = { 0 };
-	size_t i2c_ops_cnt;
+	size_t this_len;
 	int rc = 0;
 
 	msgs[0].addr = i2c_addr;
@@ -6268,14 +6317,7 @@ static int al_mod_eth_i2c_data_read(void *context, uint8_t bus_id, uint8_t i2c_a
 	msgs[1].addr = i2c_addr;
 	msgs[1].flags = I2C_M_RD;
 	msgs[1].buf = val;
-
-	if (likely(seq)) {
-		msgs[1].len = len;
-		i2c_ops_cnt = 1;
-	} else {
-		msgs[1].len = 1;
-		i2c_ops_cnt = len;
-	}
+	msgs[1].len = len;
 
 	i2c_adapter = i2c_get_adapter(bus_id);
 
@@ -6288,48 +6330,49 @@ static int al_mod_eth_i2c_data_read(void *context, uint8_t bus_id, uint8_t i2c_a
 		return -EINVAL;
 	}
 
-	for (; i2c_ops_cnt--; msgs[1].buf++, reg_addr++) {
+	while (len) {
+		this_len = len;
+		if (this_len > block_size)
+			this_len = block_size;
+
+		msgs[1].len = this_len;
+
 		if (i2c_transfer(i2c_adapter, msgs, ARRAY_SIZE(msgs)) != ARRAY_SIZE(msgs)) {
 			netdev_dbg(adapter->netdev, "Failed to write sfp+ parameters\n");
 			rc = -ETIMEDOUT;
 			break;
 		}
+
+		msgs[1].buf += this_len;
+		reg_addr += this_len;
+		len -= this_len;
 	}
 
 	i2c_put_adapter(i2c_adapter);
 	return rc;
 }
 
-static int al_mod_eth_i2c_data_write(void *context, uint8_t bus_id, uint8_t i2c_addr, uint8_t reg_addr, uint8_t *val, size_t len, al_mod_bool seq)
+static int al_mod_eth_i2c_data_write(void *context, uint8_t bus_id, uint8_t i2c_addr, uint8_t reg_addr, uint8_t *val, size_t len, size_t block_size)
 {
 	struct i2c_adapter *i2c_adapter;
 	struct al_mod_eth_adapter *adapter = context;
 	struct i2c_msg msgs[1] = { 0 };
-	uint8_t data_s[2] = { 0 }, *data_d = NULL;
-	size_t i2c_ops_cnt;
 	int rc = 0;
 
 	msgs[0].addr = i2c_addr;
 	msgs[0].flags = 0;
-	if (likely(seq)) {
-		data_d = kmalloc(1 + len, GFP_KERNEL);
-		if (NULL == data_d) {
-			netdev_err(adapter->netdev, "Unable to allocate i2c msg.\n");
-			return -ENOMEM;
-		}
-		msgs[0].len = (1 + len);
-		msgs[0].buf = data_d;
-		i2c_ops_cnt = 1;
-	} else {
-		msgs[0].len = (1 + 1);
-		msgs[0].buf = &data_s[0];
-		i2c_ops_cnt = len;
+	msgs[0].len = (1 + len);
+	msgs[0].buf = kmalloc(1 + len, GFP_KERNEL);
+
+	if (NULL == msgs[0].buf) {
+		netdev_err(adapter->netdev, "Unable to allocate i2c msg.\n");
+		return -ENOMEM;
 	}
 
 	i2c_adapter = i2c_get_adapter(bus_id);
 
 	if (i2c_adapter == NULL) {
-		kfree(data_d);
+		kfree(msgs[0].buf);
 		netdev_err(
 			adapter->netdev,
 			"Failed to get i2c adapter. "
@@ -6338,40 +6381,30 @@ static int al_mod_eth_i2c_data_write(void *context, uint8_t bus_id, uint8_t i2c_
 		return -EINVAL;
 	}
 
-	while (i2c_ops_cnt--) {
-		if (likely(seq)) {
-			/* sequential access*/
-			msgs[0].buf[0] = reg_addr;
-			memcpy(&msgs[0].buf[1], val, len);
-		} else {
-			/* byte-per-byte access */
-			msgs[0].buf[0] = reg_addr++;
-			msgs[0].buf[1] = *val++;
-		}
+	rc = i2c_transfer(i2c_adapter, msgs, ARRAY_SIZE(msgs));
 
-		if (i2c_transfer(i2c_adapter, msgs, ARRAY_SIZE(msgs)) != ARRAY_SIZE(msgs)) {
-			netdev_dbg(adapter->netdev, "Failed to write sfp+ parameters\n");
-			rc = -ETIMEDOUT;
-			break;
-		}
-	}
+	kfree(msgs[0].buf);
 
 	i2c_put_adapter(i2c_adapter);
-	kfree(data_d);
 
-	return rc;
+	if (rc < 0) {
+		netdev_dbg(adapter->netdev, "Failed to write sfp+ parameters\n");
+		return rc;
+	}
+
+	return rc == ARRAY_SIZE(msgs) ? len : 0;
 }
 
 static int al_mod_eth_i2c_byte_read(void *context, uint8_t bus_id, uint8_t i2c_addr, uint8_t reg_addr,
 				uint8_t *val)
 {
 
-	return al_mod_eth_i2c_data_read(context, bus_id, i2c_addr, reg_addr, val, 1, AL_TRUE);
+	return al_mod_eth_i2c_data_read(context, bus_id, i2c_addr, reg_addr, val, 1, 1);
 }
 
 static int al_mod_eth_i2c_byte_write(void *context, uint8_t bus_id, uint8_t i2c_addr, uint8_t reg_addr, uint8_t val)
 {
-	return al_mod_eth_i2c_data_write(context, bus_id, i2c_addr, reg_addr, &val, 1, AL_TRUE);
+	return al_mod_eth_i2c_data_write(context, bus_id, i2c_addr, reg_addr, &val, 1, 1);
 }
 
 static uint8_t al_mod_eth_get_rand_byte(void)
@@ -6746,6 +6779,10 @@ static void al_mod_eth_lm_config(struct al_mod_eth_adapter *adapter)
 	params.auto_fec_toggle_timeout = AUTO_FEC_TOGGLE_TIMEOUT;
 	params.get_msec = al_mod_eth_systime_msec_get;
 	params.led_config = &al_mod_eth_lm_led_config;
+
+	params.sfp_enhanced_link_detection = adapter->sfp_enhanced_link_detection;
+	params.sfp_gpio_init = adapter->sfp_gpio_init;
+	params.sfp_gpio_list = adapter->sfp_gpio_list;
 
 	if (adapter->gpio_sfp_present) {
 		err = gpio_request_one(adapter->gpio_sfp_present, GPIOF_IN, "sfp_present");
@@ -9767,6 +9804,12 @@ al_mod_eth_remove(struct pci_dev *pdev)
 	struct al_mod_eth_adapter *adapter = pci_get_drvdata(pdev);
 	struct net_device *dev = adapter->netdev;
 
+	if (adapter->sfp_gpio_init) {
+		int i;
+		for (i = 0; i < AL_ETH_GPIO_MAX; ++i)
+			gpiod_put(adapter->sfp_gpio_list[i]);
+
+	}
 #ifdef CONFIG_ARCH_ALPINE
 	/*
 	 * adapter->lm_context.lock was initialized in al_mod_eth_probe

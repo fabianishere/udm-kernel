@@ -95,7 +95,8 @@ swconfig_set_vlan_ports(struct switch_dev *dev, const struct switch_attr *attr,
 			return -EINVAL;
 
 		if (ops->set_port_pvid &&
-		    !(ports[i].flags & (1 << SWITCH_PORT_FLAG_TAGGED)))
+		    !(ports[i].flags & (1 << SWITCH_PORT_FLAG_TAGGED)) &&
+		    !(ports[i].flags & (1 << SWITCH_PORT_FLAG_UNTAGGED)))
 			ops->set_port_pvid(dev, ports[i].id, val->port_vlan);
 	}
 
@@ -362,6 +363,7 @@ static const struct nla_policy switch_policy[SWITCH_ATTR_MAX+1] = {
 static const struct nla_policy port_policy[SWITCH_PORT_ATTR_MAX+1] = {
 	[SWITCH_PORT_ID] = { .type = NLA_U32 },
 	[SWITCH_PORT_FLAG_TAGGED] = { .type = NLA_FLAG },
+	[SWITCH_PORT_FLAG_UNTAGGED] = { .type = NLA_FLAG },
 };
 
 static struct nla_policy link_policy[SWITCH_LINK_ATTR_MAX] = {
@@ -710,6 +712,8 @@ swconfig_parse_ports(struct sk_buff *msg, struct nlattr *head,
 		port->id = nla_get_u32(tb[SWITCH_PORT_ID]);
 		if (tb[SWITCH_PORT_FLAG_TAGGED])
 			port->flags |= (1 << SWITCH_PORT_FLAG_TAGGED);
+		if (tb[SWITCH_PORT_FLAG_UNTAGGED])
+			port->flags |= (1 << SWITCH_PORT_FLAG_UNTAGGED);
 		val->len++;
 	}
 
@@ -847,6 +851,10 @@ swconfig_send_port(struct swconfig_callback *cb, void *arg)
 		goto nla_put_failure;
 	if (port->flags & (1 << SWITCH_PORT_FLAG_TAGGED)) {
 		if (nla_put_flag(cb->msg, SWITCH_PORT_FLAG_TAGGED))
+			goto nla_put_failure;
+	}
+	if (port->flags & (1 << SWITCH_PORT_FLAG_UNTAGGED)) {
+		if (nla_put_flag(cb->msg, SWITCH_PORT_FLAG_UNTAGGED))
 			goto nla_put_failure;
 	}
 
@@ -1354,10 +1362,58 @@ unregister_switch(struct switch_dev *dev)
 }
 EXPORT_SYMBOL_GPL(unregister_switch);
 
+static int
+set_phy_adv_to_max(struct switch_dev *dev, int port)
+{
+	int rc = 0;
+	u16 status; // contains port capabilities
+	u16 adv; // contains advertised capabilities
+
+	// set to max 10M and 100M capabilities
+	rc |= dev->ops->phy_read16(dev, port, MII_BMSR, &status);
+	rc |= dev->ops->phy_read16(dev, port, MII_ADVERTISE, &adv);
+	status = (status >> 6) & (0x1F << 5);
+	adv &= ~(0x1F << 5);
+	adv |= status;
+	rc |= dev->ops->phy_write16(dev, port, MII_ADVERTISE, adv);
+
+	// set to max 1G capabilities
+	rc |= dev->ops->phy_read16(dev, port, MII_ESTATUS, &status);
+	rc |= dev->ops->phy_read16(dev, port, MII_CTRL1000, &adv);
+	status = (status >> 4) & (0x03 << 8);
+	adv &= ~(0x03 << 8);
+	adv |= status;
+	rc |= dev->ops->phy_write16(dev, port, MII_CTRL1000, adv);
+	return rc;
+}
+
+static int
+set_phy_adv_to_1G(struct switch_dev *dev, int port)
+{
+	int rc = 0;
+	u16 status; // contains port capabilities
+	u16 adv; // contains advertised capabilities
+
+	// reset 10M and 100M capabilities
+	rc |= dev->ops->phy_read16(dev, port, MII_ADVERTISE, &adv);
+	adv &= ~(0x1F << 5);
+	rc |= dev->ops->phy_write16(dev, port, MII_ADVERTISE, adv);
+
+	// set to max 1G capabilities
+	rc |= dev->ops->phy_read16(dev, port, MII_ESTATUS, &status);
+	rc |= dev->ops->phy_read16(dev, port, MII_CTRL1000, &adv);
+	status = (status >> 4) & (0x03 << 8);
+	adv &= ~(0x03 << 8);
+	adv |= status;
+	rc |= dev->ops->phy_write16(dev, port, MII_CTRL1000, adv);
+	return rc;
+}
+
 int
 switch_generic_set_link(struct switch_dev *dev, int port,
 			struct switch_port_link *link)
 {
+	int rc;
 	if (WARN_ON(!dev->ops->phy_write16))
 		return -ENOTSUPP;
 
@@ -1369,6 +1425,11 @@ switch_generic_set_link(struct switch_dev *dev, int port,
 	{
 		/* Generic implementation */
 		if (link->aneg) {
+			rc = set_phy_adv_to_max(dev, port);
+			if (rc) {
+				pr_err("Failed to set A-NEG to max\n");
+				return -EFAULT;
+			}
 			dev->ops->phy_write16(dev, port, MII_BMCR, 0x0000);
 			dev->ops->phy_write16(dev, port, MII_BMCR, BMCR_ANENABLE | BMCR_ANRESTART);
 		} else {
@@ -1384,7 +1445,16 @@ switch_generic_set_link(struct switch_dev *dev, int port,
 				bmcr |= BMCR_SPEED100;
 				break;
 			case SWITCH_PORT_SPEED_1000:
-				bmcr |= BMCR_SPEED1000;
+				/* According to IEEE, 1G and above always should
+				 * have autoneg On. If only 1G is desired then
+				 * only advertisement should be set accordingly.
+				 */
+				rc = set_phy_adv_to_1G(dev, port);
+				if (rc) {
+					pr_err("Failed to set A-NEG to 1G\n");
+					return -EFAULT;
+				}
+				bmcr = BMCR_ANENABLE | BMCR_ANRESTART;
 				break;
 			default:
 				return -ENOTSUPP;

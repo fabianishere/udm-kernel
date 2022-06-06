@@ -46,6 +46,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "al_mod_serdes.h"
 #include "al_mod_hal_eth.h"
 #include "al_mod_init_eth_kr.h"
+#include "al_mod_hal_eth_mac_regs.h"
 
 /* delay before checking link status with new serdes parameters (uSec) */
 #define AL_ETH_LM_LINK_STATUS_DELAY	1000
@@ -64,6 +65,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define MODULE_IDENTIFIER_SFP		0x3
 #define MODULE_IDENTIFIER_QSFP		0xd
 
+#define SFP_DEFAULT_T_STARTUP		(300)
+#define SFP_OPTIONS_LOS_INVERTED	BIT(2)
+#define SFP_OPTIONS_LOS_NORMAL		BIT(1)
 #define SFP_PRESENT			0
 #define SFP_NOT_PRESENT			1
 
@@ -105,6 +109,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #define SFP_SFF8472_LENGTH_FIELD_4_COPPER (4)
 
+#define UF_SFP_POLLING_TIMEOUT 3500
+
 enum al_mod_eth_lm_step_detection_state {
 	LM_STEP_DETECTION_INIT,
 	LM_STEP_DETECTION_RETIMER_RX_ADAPT_WAIT,
@@ -140,6 +146,8 @@ enum al_mod_eth_lm_step_retimer_wfl_state {
 
 static int retimer_full_config(struct al_mod_eth_lm_context *lm_context);
 static int al_mod_eth_lm_retimer_25g_rx_adaptation_step(struct al_mod_eth_lm_context *lm_context);
+extern const enum gpiod_flags al_mode_gpio_flags[AL_ETH_GPIO_MAX];
+extern const char* al_mod_gpio_of_names[AL_ETH_GPIO_MAX];
 
 struct _al_eth_lm_retimer {
 	int (*rx_adaptation)(struct al_mod_eth_lm_context *lm_context);
@@ -177,6 +185,99 @@ static inline al_mod_bool elapsed_time_msec(unsigned int current_time,
 	return AL_FALSE;
 }
 
+static unsigned int al_mod_eth_sfp_gpio_get_state(struct al_mod_eth_lm_context *lm_context)
+{
+	unsigned int i, state, v;
+
+	for (i = 0, state = 0; i < AL_ETH_GPIO_MAX; ++i) {
+		if (al_mode_gpio_flags[i] != GPIOD_IN || !lm_context->sfp_gpio_list[i])
+			continue;
+		v = gpiod_get_value_cansleep(lm_context->sfp_gpio_list[i]);
+		if (v)
+			state |= BIT(i);
+	}
+
+	return state;
+}
+
+static void al_mod_eth_sfp_gpio_state_update(struct al_mod_eth_lm_context *lm_context)
+{
+	unsigned int state, i, changed;
+
+	state = al_mod_eth_sfp_gpio_get_state(lm_context);
+
+	changed = state ^ lm_context->sfp_gpio_state;
+	changed &= SFP_F_PRESENT | SFP_F_LOS | SFP_F_TX_FAULT;
+
+	for (i = 0; i < AL_ETH_GPIO_MAX; i++)
+		if (changed & BIT(i))
+			lm_debug("%s:%s %u -> %u\n", __func__, al_mod_gpio_of_names[i],
+			        !!(lm_context->sfp_gpio_state & BIT(i)), !!(state & BIT(i)));
+
+	state |= lm_context->sfp_gpio_state & SFP_F_TX_DISABLE;
+	lm_context->sfp_gpio_state = state;
+}
+
+static bool al_mod_eth_sfp_los_check_los(struct al_mod_eth_lm_context *lm_context)
+{
+	const __be16 los_inverted = cpu_to_be16(SFP_OPTIONS_LOS_INVERTED);
+	const __be16 los_normal = cpu_to_be16(SFP_OPTIONS_LOS_NORMAL);
+	__be16 los_options;
+	bool los = false;
+
+	do {
+		if (!lm_context->sfp_id_valid)
+			break;
+
+		mutex_lock(&lm_context->lock);
+		los_options = lm_context->sfp_id.ext.options & (los_inverted | los_normal);
+		mutex_unlock(&lm_context->lock);
+
+		/*
+		 * If neither SFP_OPTIONS_LOS_INVERTED nor SFP_OPTIONS_LOS_NORMAL
+		 * are set, we assume that no LOS signal is available. If both are
+		 * set, we assume LOS is not implemented (and is meaningless.)
+		 */
+		if (los_options == los_inverted)
+			los = !(lm_context->sfp_gpio_state & SFP_F_LOS);
+		else if (los_options == los_normal)
+			los = !!(lm_context->sfp_gpio_state & SFP_F_LOS);
+
+	} while (0);
+
+	return los;
+}
+
+static int al_mod_eth_lm_link_status_get(struct al_mod_eth_lm_context *lm_context,
+	struct al_mod_eth_link_status *status)
+{
+	int rc;
+
+	rc = al_mod_eth_link_status_get(lm_context->adapter, status);
+	if (rc) {
+		al_mod_err("%s: Error getting link status from MAC\n", __func__);
+		return rc;
+	}
+
+	if (lm_context->sfp_enhanced_link_detection) {
+		if (lm_context->sfp_gpio_init) {
+			al_mod_eth_sfp_gpio_state_update(lm_context);
+			lm_debug("check_los %d los %d txfault %d det %d",
+				al_mod_eth_sfp_los_check_los(lm_context),
+				!!(lm_context->sfp_gpio_state & SFP_F_LOS),
+				!!(lm_context->sfp_gpio_state & SFP_F_TX_FAULT),
+				!!(lm_context->sfp_gpio_state & SFP_F_PRESENT));
+
+			status->remote_fault |= al_mod_eth_sfp_los_check_los(lm_context);
+			status->local_fault |= !!(lm_context->sfp_gpio_state & SFP_F_TX_FAULT);
+		}
+	}
+
+	lm_debug("remote_fault %d local_fault %d link %d", !!status->remote_fault,
+		 !!status->local_fault, !!status->link_up);
+	return 0;
+}
+
 static unsigned int al_mod_eth_sfp_crc(void *buf, size_t len)
 {
 	uint8_t *p, check;
@@ -185,6 +286,19 @@ static unsigned int al_mod_eth_sfp_crc(void *buf, size_t len)
 		check += *p;
 
 	return check;
+}
+
+static bool al_mod_eth_sfp_is_10GBaseT(struct sfp_eeprom_id *id)
+{
+	const char *UF_RJ45_10G = "UF-RJ45-10G";
+
+	if (id->base.br_nominal == 103) {
+		if (id->base.connector == SFP_CONNECTOR_RJ45)
+			return true;
+		if (!memcmp(id->base.vendor_pn, UF_RJ45_10G, strlen(UF_RJ45_10G)))
+			return true; // UBNT SFP EEPROM broken as usual
+	}
+	return false;
 }
 
 static bool al_mod_eth_sfp_is_10g(struct sfp_eeprom_id *id)
@@ -216,19 +330,34 @@ static bool al_mod_eth_sfp_is_1g(struct sfp_eeprom_id *id)
 	return false;
 }
 
+static inline unsigned long al_mod_eth_sfp_quirk_flags_get(struct al_mod_eth_lm_context *lm_context)
+{
+	unsigned long sfp_quirk_flags = 0;
+
+	al_mod_assert(lm_context);
+
+	mutex_lock(&lm_context->lock);
+	sfp_quirk_flags = lm_context->sfp_quirk_flags;
+	mutex_unlock(&lm_context->lock);
+
+	return sfp_quirk_flags;
+}
+
 static int al_mod_eth_sfp_mii_read(struct al_mod_eth_lm_context *lm_context, int addr, uint16_t *val) {
 
 	uint8_t data[2] = {0};
 	int rc = 0;
+	unsigned long sfp_quirk_flags = 0;
 
 	al_mod_assert(val);
 	al_mod_assert(lm_context);
 	al_mod_assert(lm_context->i2c_read_data);
 
-	rc = lm_context->i2c_read_data(
-		lm_context->i2c_context, lm_context->sfp_bus_id, SFP_I2C_ADDR_PHY, addr, data,
-		sizeof(data),
-		!test_bit(AL_MOD_SFP_QUIRK_NO_SEQ_READING, &lm_context->sfp_quirk_flags));
+	sfp_quirk_flags = al_mod_eth_sfp_quirk_flags_get(lm_context);
+
+	rc = lm_context->i2c_read_data(lm_context->i2c_context, lm_context->sfp_bus_id,
+				       SFP_I2C_ADDR_PHY, addr, data, sizeof(data),
+				       lm_context->sfp_i2c_block_size);
 	if (rc)
 		return rc;
 
@@ -258,33 +387,72 @@ static int al_mod_eth_sfp_phy_id(struct al_mod_eth_lm_context *lm_context, int *
 	*phy_id |= phy_reg;
 	return 0;
 }
-static const struct al_mod_sfp_fixup_entry al_mod_sfp_fixup_list[] = {
-#define X(_pn, _sfp_quirk_flags, _delay_init_s) \
-	{ .pn = _pn, .sfp_quirk_flags = _sfp_quirk_flags, .delay_init_s = _delay_init_s },
+static const struct al_mod_sfp_quirk_entry al_mod_sfp_fixup_list[] = {
+#define X(_pn, _flags, _delay_init_ms) \
+	{ .pn = _pn, .flags = _flags, .delay_init_ms = _delay_init_ms },
 	AL_MOD_SFP_FIXUP_LIST(X)
 #undef X
 };
+
+static bool al_mod_eth_sfp_needs_byte_io(struct al_mod_eth_lm_context *lm_context, void *buf, size_t len)
+{
+	size_t i, block_size = lm_context->sfp_i2c_block_size;
+
+	/* Already using byte IO */
+	if (block_size == 1)
+		return false;
+
+	for (i = 1; i < len; i += block_size) {
+		if (memchr_inv(buf + i, '\0', min(block_size - 1, len - i)))
+			return false;
+	}
+	return true;
+}
 
 static int al_mod_eth_sfp_detect(struct al_mod_eth_lm_context *lm_context,
 				 enum al_mod_eth_lm_link_mode *new_mode)
 {
 	/* SFP module inserted - read I2C data */
+	const char *uc_dac_sfp_pn = "UC-DAC-SFP+";
+	const char *uf_rj45_1g_sfp_pn = "UF-RJ45-1G";
 	struct sfp_eeprom_id id;
 	uint8_t cc = 0;
 	int rc = 0, phy_id, i;
-	uint32_t sfp_quirk_flags = 0;
+	unsigned long sfp_quirk_flags = 0;
+	const struct al_mod_sfp_quirk_entry *sfp_quirk = NULL;
+	unsigned sfp_t_start_ms;
+
 	al_mod_assert(lm_context->i2c_read_data);
 
 	lm_context->sfp_has_phyreg = AL_FALSE;
 
+	/*
+	 * Some SFP modules and also some Linux I2C drivers do not like reads
+	 * longer than 16 bytes, so read the EEPROM in chunks of 16 bytes at
+	 * a time.
+	 */
+	lm_context->sfp_i2c_block_size = SFP_I2C_MAX_BLOCK_SIZE;
+
 	do {
 		rc = lm_context->i2c_read_data(lm_context->i2c_context, lm_context->sfp_bus_id,
-					       lm_context->sfp_i2c_addr,
-					       offsetof(struct sfp_eeprom_base, vendor_pn),
-					       (uint8_t *)&id.base.vendor_pn,
-					       sizeof(id.base.vendor_pn), AL_FALSE);
+					       lm_context->sfp_i2c_addr, 0, (uint8_t *)&id.base,
+					       sizeof(id.base), lm_context->sfp_i2c_block_size);
 		if (rc)
 			break;
+
+		if (al_mod_eth_sfp_needs_byte_io(lm_context, &id.base, sizeof(id.base))) {
+			lm_debug("%s: Switching to reading EEPROM to one byte at a time", __func__);
+
+			lm_context->sfp_i2c_block_size = 1;
+
+			rc = lm_context->i2c_read_data(lm_context->i2c_context,
+						       lm_context->sfp_bus_id,
+						       lm_context->sfp_i2c_addr, 0,
+						       (uint8_t *)&id.base, sizeof(id.base),
+						       lm_context->sfp_i2c_block_size);
+			if (rc)
+				break;
+		}
 
 		lm_debug("%s: SFP detected (PN \"%.*s\")", __func__,
 			 (int)sizeof(id.base.vendor_pn), id.base.vendor_pn);
@@ -292,28 +460,18 @@ static int al_mod_eth_sfp_detect(struct al_mod_eth_lm_context *lm_context,
 		for (i = 0; i < ARRAY_SIZE(al_mod_sfp_fixup_list); ++i) {
 			if (!strncmp(id.base.vendor_pn, al_mod_sfp_fixup_list[i].pn,
 				     strlen(al_mod_sfp_fixup_list[i].pn))) {
-				sfp_quirk_flags = al_mod_sfp_fixup_list[i].sfp_quirk_flags;
-				/* delay init by n seconds  - some modules need this */
-				msleep(al_mod_sfp_fixup_list[i].delay_init_s * 1000);
+				sfp_quirk = &al_mod_sfp_fixup_list[i];
+				sfp_quirk_flags = sfp_quirk->flags;
 				break;
 			}
 		}
 
-		mutex_lock(&lm_context->lock);
-		lm_context->sfp_quirk_flags = sfp_quirk_flags;
-		mutex_unlock(&lm_context->lock);
-
-		/* continue detection */
-		rc = lm_context->i2c_read_data(
-			lm_context->i2c_context, lm_context->sfp_bus_id, lm_context->sfp_i2c_addr,
-			0, (uint8_t *)&id, sizeof(id),
-			!test_bit(AL_MOD_SFP_QUIRK_NO_SEQ_READING, &lm_context->sfp_quirk_flags));
-		if (rc)
-			break;
+		sfp_t_start_ms = (sfp_quirk && sfp_quirk->delay_init_ms > 0) ?
+					       sfp_quirk->delay_init_ms :
+					       SFP_DEFAULT_T_STARTUP;
 
 		cc = al_mod_eth_sfp_crc(&id.base, sizeof(id.base) - 1);
 		if (cc != id.base.cc_base) {
-			const char *uc_dac_sfp_pn = "UC-DAC-SFP+";
 			lm_debug("%s: EEPROM base structure checksum failure (0x%02x != 0x%02x)",
 				    __func__, cc, id.base.cc_base);
 			/**
@@ -330,11 +488,19 @@ static int al_mod_eth_sfp_detect(struct al_mod_eth_lm_context *lm_context,
 				/* Set len to 1 meter */
 				id.base.link_len[SFP_SFF8472_LENGTH_FIELD_4_COPPER] = 1;
 				/* As data are faulty, deny the access to EEPROM */
-				lm_context->sfp_quirk_flags |=
+				sfp_quirk_flags |=
 					BIT(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS);
 				break;
 			}
 		}
+
+		rc = lm_context->i2c_read_data(lm_context->i2c_context, lm_context->sfp_bus_id,
+					       lm_context->sfp_i2c_addr,
+					       offsetof(struct sfp_eeprom_id, ext),
+					       (uint8_t *)&id.ext, sizeof(id.ext),
+					       lm_context->sfp_i2c_block_size);
+		if (rc)
+			break;
 
 		cc = al_mod_eth_sfp_crc(&id.ext, sizeof(id.ext) - 1);
 		if (cc != id.ext.cc_ext) {
@@ -342,13 +508,31 @@ static int al_mod_eth_sfp_detect(struct al_mod_eth_lm_context *lm_context,
 				 __func__, cc, id.ext.cc_ext);
 			memset(&id.ext, 0, sizeof(id.ext));
 		}
+		/*
+		 * UF-RJ45-1G's EEPROM shows no support for LOS, but PHY fully supports
+		 * it. Fix LOS option for UF-RJ45-1G to get better link detection.
+		 */
+		if (!strncmp(id.base.vendor_pn, uf_rj45_1g_sfp_pn,
+				     strlen(uf_rj45_1g_sfp_pn)) && !id.ext.options) {
+			id.ext.options |= cpu_to_be16(SFP_OPTIONS_LOS_NORMAL);
+		}
 
-		if (!test_bit(AL_MOD_SFP_QUIRK_NO_PHY_DETECTION, &lm_context->sfp_quirk_flags) &&
-			     !al_mod_eth_sfp_phy_id(lm_context, &phy_id)) {
+		if (test_bit(AL_MOD_SFP_QUIRK_ENHANCED_LINK_DETECTION,
+			     &sfp_quirk_flags)) {
+			lm_context->sfp_enhanced_link_detection = true;
+		} else {
+			lm_context->sfp_enhanced_link_detection =
+				lm_context->sfp_enhanced_link_detection_default;
+		}
+
+		/* Note: Keep PHY ID reading for debugging purposes */
+		if (lm_context->debug && !al_mod_eth_sfp_phy_id(lm_context, &phy_id)) {
 			lm_debug("%s: SFP module has PHY with ID 0x%08x",
 				 __func__, phy_id);
-			lm_context->sfp_has_phyreg = AL_TRUE;
 		}
+
+		/* t_init/t_start_up (SFF-8472/SFF-8431) delay in ms */
+		msleep(sfp_t_start_ms);
 	} while (0);
 
 	if (rc) {
@@ -380,6 +564,59 @@ static int al_mod_eth_sfp_detect(struct al_mod_eth_lm_context *lm_context,
 		}
 		/* for active direct attached need to use len 0 in the retimer configuration */
 		lm_context->da_len = (id.base.sfp_ct_passive) ? id.base.link_len[SFP_SFF8472_LENGTH_FIELD_4_COPPER] : 0;
+	} else if (lm_context->sfp_probe_10g && al_mod_eth_sfp_is_10GBaseT(&id)) {
+		struct al_mod_eth_mac_obj *mac_obj = &lm_context->adapter->mac_obj;
+		struct al_mod_eth_link_status status;
+		unsigned long diff;
+
+		/* When we connect 10G module to 1G interface, bit-15 gets
+		 * cleared (most likely bit indicated established 10G-KR link).
+		 * It's set when cable's dangling or connected to 10G-KR medium.
+		 * Note: bit-15 logic stolen from: link_status_get().
+		 */
+		switch (lm_context->mode) {
+		case AL_ETH_LM_MODE_10G_OPTIC:
+			*new_mode = AL_ETH_LM_MODE_10G_OPTIC;
+
+			if (!mac_obj->check_10g_base_kr)
+				break; // not supported
+
+			if (mac_obj->check_10g_base_kr(mac_obj)) {
+				lm_context->RJ45_10G_jiffies = jiffies;
+			} else {
+				diff = jiffies - lm_context->RJ45_10G_jiffies;
+				if (jiffies_to_msecs(diff) > UF_SFP_POLLING_TIMEOUT) {
+					*new_mode = AL_ETH_LM_MODE_1G;
+					lm_context->RJ45_10G_jiffies = jiffies;
+				}
+			}
+			break;
+		case AL_ETH_LM_MODE_1G:
+			*new_mode = AL_ETH_LM_MODE_1G;
+
+			rc = al_mod_eth_lm_link_status_get(lm_context, &status);
+			if (rc || !status.local_fault || !status.remote_fault) {
+				diff = jiffies - lm_context->RJ45_10G_jiffies;
+				if (jiffies_to_msecs(diff) > UF_SFP_POLLING_TIMEOUT) {
+					*new_mode = AL_ETH_LM_MODE_10G_OPTIC;
+					lm_context->RJ45_10G_jiffies = jiffies;
+				}
+			} else {
+				lm_context->RJ45_10G_jiffies = jiffies;
+			}
+			break;
+		default:
+			lm_context->RJ45_10G_jiffies = jiffies;
+			*new_mode = AL_ETH_LM_MODE_10G_OPTIC;
+			break;
+		}
+
+		if (lm_context->mode == AL_ETH_LM_MODE_DISCONNECTED) {
+			if (*new_mode == AL_ETH_LM_MODE_1G)
+				lm_debug("%s: 1G SGMII detected\n", __func__);
+			else
+				lm_debug("%s: 10G-KR detected\n", __func__);
+		}
 	} else if (lm_context->sfp_probe_10g && al_mod_eth_sfp_is_10g(&id)) {
 		*new_mode = AL_ETH_LM_MODE_10G_OPTIC;
 		if ((lm_context->mode != *new_mode) &&
@@ -416,6 +653,10 @@ static int al_mod_eth_sfp_detect(struct al_mod_eth_lm_context *lm_context,
 
 	mutex_lock(&lm_context->lock);
 	lm_context->sfp_id = id;
+	lm_context->sfp_quirk = sfp_quirk;
+	lm_context->sfp_quirk_flags = sfp_quirk_flags;
+	lm_context->sfp_id_valid = AL_TRUE;
+
 	if (*new_mode != AL_ETH_LM_MODE_DISCONNECTED) {
 		if (lm_context->link_conf.speed > SPEED_10 &&
 		    lm_context->link_conf.speed <= SPEED_1000) {
@@ -427,12 +668,11 @@ static int al_mod_eth_sfp_detect(struct al_mod_eth_lm_context *lm_context,
 	lm_context->mode = *new_mode;
 
 	lm_debug(
-		"%s: (mode %s) SFP inserted -> Vendor:%.*s,PN:%.*s, REV:%.*s, SERIAL:%.*s PHY : %s quirks : %x",
+		"%s: (mode %s) SFP inserted -> Vendor:%.*s,PN:%.*s, REV:%.*s, SERIAL:%.*s, quirks : %lx",
 		__func__, al_mod_eth_lm_mode_convert_to_str(lm_context->mode),
 		(int)sizeof(id.base.vendor_name), id.base.vendor_name,
 		(int)sizeof(id.base.vendor_pn), id.base.vendor_pn, (int)sizeof(id.base.vendor_rev),
-		id.base.vendor_rev, (int)sizeof(id.ext.vendor_sn), id.ext.vendor_sn,
-		lm_context->sfp_has_phyreg ? "yes" : "no", lm_context->sfp_quirk_flags);
+		id.base.vendor_rev, (int)sizeof(id.ext.vendor_sn), id.ext.vendor_sn, sfp_quirk_flags);
 
 	mutex_unlock(&lm_context->lock);
 
@@ -507,32 +747,38 @@ static int al_mod_eth_module_detect(struct al_mod_eth_lm_context	*lm_context,
 	al_mod_bool use_gpio_present = AL_FALSE;
 	al_mod_bool bounce_detected = AL_FALSE;
 
-	if ((lm_context->gpio_get) && (lm_context->gpio_present != 0)) {
-		int sfp_present_debounce;
+	if (lm_context->sfp_gpio_init) {
+		al_mod_eth_sfp_gpio_state_update(lm_context);
+		sfp_present = !!(lm_context->sfp_gpio_state & SFP_F_PRESENT) ? SFP_PRESENT :
+										   SFP_NOT_PRESENT;
+	} else {
+		if ((lm_context->gpio_get) && (lm_context->gpio_present != 0)) {
+			int sfp_present_debounce;
 
-		use_gpio_present = AL_TRUE;
-		sfp_present = lm_context->gpio_get(lm_context->gpio_present);
-		for (i = 0; i < SFP_PRESENT_GPIO_DEBOUNCE_ITERS; i++) {
-			al_mod_udelay(1);
-			sfp_present_debounce = lm_context->gpio_get(lm_context->gpio_present);
-			if (sfp_present_debounce != sfp_present) {
-				bounce_detected = AL_TRUE;
-				break;
+			use_gpio_present = AL_TRUE;
+			sfp_present = lm_context->gpio_get(lm_context->gpio_present);
+			for (i = 0; i < SFP_PRESENT_GPIO_DEBOUNCE_ITERS; i++) {
+				al_mod_udelay(1);
+				sfp_present_debounce = lm_context->gpio_get(lm_context->gpio_present);
+				if (sfp_present_debounce != sfp_present) {
+					bounce_detected = AL_TRUE;
+					break;
+				}
 			}
 		}
-	}
 
-	if (bounce_detected) {
-		*new_mode = lm_context->mode;
+		if (bounce_detected) {
+			*new_mode = lm_context->mode;
 
-		return 0;
+			return 0;
+		}
 	}
 
 	if (sfp_present == SFP_NOT_PRESENT) {
 		if (lm_context->mode != AL_ETH_LM_MODE_DISCONNECTED)
 			lm_debug("%s: SFP not present\n", __func__);
 		*new_mode = AL_ETH_LM_MODE_DISCONNECTED;
-
+		lm_context->sfp_id_valid = AL_FALSE;
 		return 0;
 	} else if (use_gpio_present && lm_context->sfp_detect_force_mode) {
 		if (lm_context->mode == AL_ETH_LM_MODE_DISCONNECTED)
@@ -1129,36 +1375,17 @@ static int al_mod_eth_lm_retimer_25g_rx_adaptation_step(struct al_mod_eth_lm_con
 
 static int al_mod_eth_lm_check_for_link(struct al_mod_eth_lm_context *lm_context, al_mod_bool *link_up)
 {
-	struct al_mod_eth_link_status status;
+	struct al_mod_eth_link_status status = {0};
 	int ret = 0;
-	uint16_t mii_bmsr = 0;
 
 	al_mod_eth_link_status_clear(lm_context->adapter);
-	al_mod_eth_link_status_get(lm_context->adapter, &status);
+	al_mod_eth_lm_link_status_get(lm_context, &status);
 
-	if(lm_context->sfp_has_phyreg) {
-		/* Read link and autonegotiation status */
-		ret = al_mod_eth_sfp_mii_read(lm_context, MII_BMSR, &mii_bmsr);
-		if(ret) {
-			lm_debug("%s: unable to read MII_BMSR\n", __func__);
-			return ret;
-		}
-		status.link_up = status.link_up && (mii_bmsr & BMSR_LSTATUS);
-		lm_debug("%s: >>>> PHY link state %s autoneg %s\n", __func__,
-			 (mii_bmsr & BMSR_LSTATUS) ? "UP" : "DOWN",
-			 (mii_bmsr & BMSR_ANEGCOMPLETE) ? "DONE" : "IN PROGRESS");
-	}
-
-	if (status.link_up == AL_TRUE) {
-		lm_debug("%s: >>>> Link state DOWN ==> UP\n", __func__);
-		al_mod_eth_led_set(lm_context->adapter, AL_TRUE);
-		lm_context->link_state = AL_ETH_LM_LINK_UP;
-		*link_up = AL_TRUE;
-
-		return 0;
-	} else if (status.local_fault) {
+	if (!lm_context->sfp_enhanced_link_detection && status.link_up == AL_TRUE) {
+		goto link_is_up;
+	}  else if (status.local_fault) {
+		lm_debug("%s: >>>> Link state DOWN\n", __func__);
 		lm_context->link_state = AL_ETH_LM_LINK_DOWN;
-		al_mod_eth_led_set(lm_context->adapter, AL_FALSE);
 		/* TODO -> EOSN-385
 		 * 	if ((lm_context->mode == AL_ETH_LM_MODE_25G) && lm_context->auto_fec_enable)
 		 *		lm_debug("%s: Failed to establish link\n", __func__);
@@ -1166,16 +1393,30 @@ static int al_mod_eth_lm_check_for_link(struct al_mod_eth_lm_context *lm_context
 		 *		al_mod_err("%s: Failed to establish link\n", __func__);
 		 */
 		ret = -1;
-	} else {
+	} else if (status.remote_fault) {
 		lm_debug("%s: >>>> Link state DOWN ==> DOWN_RF\n", __func__);
 		lm_context->link_state = AL_ETH_LM_LINK_DOWN_RF;
-		al_mod_eth_led_set(lm_context->adapter, AL_FALSE);
-
 		ret = 0;
+	} else if (status.link_up == AL_TRUE) {
+		goto link_is_up;
+	} else {
+		lm_debug("%s: >>>> Link state DOWN\n", __func__);
+		lm_context->link_state = AL_ETH_LM_LINK_DOWN;
+		ret = -1;
 	}
 
+	/* Link is down */
+	al_mod_eth_led_set(lm_context->adapter, AL_FALSE);
 	*link_up = AL_FALSE;
 	return ret;
+
+link_is_up:
+	lm_debug("%s: >>>> Link state DOWN ==> UP\n", __func__);
+	lm_context->link_state = AL_ETH_LM_LINK_UP;
+	al_mod_eth_led_set(lm_context->adapter, AL_TRUE);
+	*link_up = AL_TRUE;
+
+	return 0;
 }
 
 static int al_mod_eth_lm_link_state_check_for_detection(struct al_mod_eth_lm_context *lm_context,
@@ -1184,37 +1425,44 @@ static int al_mod_eth_lm_link_state_check_for_detection(struct al_mod_eth_lm_con
 {
 	switch (lm_context->link_state) {
 	case AL_ETH_LM_LINK_UP:
-		al_mod_eth_link_status_get(lm_context->adapter, status);
+		al_mod_eth_lm_link_status_get(lm_context, status);
 
-		if (status->link_up) {
+		if (!lm_context->sfp_enhanced_link_detection && status->link_up) {
 			if (link_fault)
 				*link_fault = AL_FALSE;
-
-			al_mod_eth_led_set(lm_context->adapter, AL_TRUE);
 
 			return 0;
 		} else if (status->local_fault) {
 			lm_debug("%s: >>>> Link state UP ==> DOWN\n", __func__);
 			lm_context->link_state = AL_ETH_LM_LINK_DOWN;
-		} else {
+		} else if (status->remote_fault) {
 			lm_debug("%s: >>>> Link state UP ==> DOWN_RF\n", __func__);
 			lm_context->link_state = AL_ETH_LM_LINK_DOWN_RF;
-		}
+		} else if (status->link_up) {
+			if (link_fault)
+				*link_fault = AL_FALSE;
 
+			return 0;
+		} else {
+			lm_context->link_state = AL_ETH_LM_LINK_DOWN;
+		}
 		break;
 	case AL_ETH_LM_LINK_DOWN_RF:
-		al_mod_eth_link_status_get(lm_context->adapter, status);
+		al_mod_eth_lm_link_status_get(lm_context, status);
 
 		if (status->local_fault) {
 			lm_debug("%s: >>>> Link state DOWN_RF ==> DOWN\n", __func__);
 			lm_context->link_state = AL_ETH_LM_LINK_DOWN;
 
 			break;
-		} else if (status->remote_fault == AL_FALSE) {
+		} else if (status->remote_fault == AL_FALSE && status->link_up) {
 			lm_debug("%s: >>>> Link state DOWN_RF ==> UP\n", __func__);
 			lm_context->link_state = AL_ETH_LM_LINK_UP;
+		} else if (status->remote_fault) {
+			/* in case of remote fault only no need to check SFP again */
+		} else {
+			lm_context->link_state = AL_ETH_LM_LINK_DOWN;
 		}
-		/* in case of remote fault only no need to check SFP again */
 		return 0;
 	case AL_ETH_LM_LINK_DOWN:
 		break;
@@ -1292,10 +1540,15 @@ static int al_mod_eth_lm_retimer_i2c_write(void *i2c_context,
 int al_mod_eth_lm_get_module_info(struct al_mod_eth_lm_context *lm_context,
 		   struct ethtool_modinfo *modinfo)
 {
+	unsigned long sfp_quirk_flags = 0;
+
 	al_mod_assert(lm_context);
 	al_mod_assert(modinfo);
 
-	if (test_bit(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS, &lm_context->sfp_quirk_flags)) {
+	sfp_quirk_flags = al_mod_eth_sfp_quirk_flags_get(lm_context);
+
+	if (test_bit(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS, &sfp_quirk_flags) ||
+	    !lm_context->sfp_id_valid) {
 		modinfo->eeprom_len = 0;
 		return 0;
 	}
@@ -1319,6 +1572,7 @@ int al_mod_eth_lm_get_module_eeprom(struct al_mod_eth_lm_context *lm_context,
 
 	unsigned int first, last, len;
 	int rc;
+	unsigned long sfp_quirk_flags = 0;
 
 	al_mod_assert(lm_context);
 	al_mod_assert(eeprom);
@@ -1328,10 +1582,12 @@ int al_mod_eth_lm_get_module_eeprom(struct al_mod_eth_lm_context *lm_context,
 	if (eeprom->len == 0)
 		return -EINVAL;
 
-	if (test_bit(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS, &lm_context->sfp_quirk_flags)) {
+	sfp_quirk_flags = al_mod_eth_sfp_quirk_flags_get(lm_context);
+
+	if (test_bit(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS, &sfp_quirk_flags)) {
 		return 0;
 	}
- 
+
 	memset(data, 0, eeprom->len);
 
 	first = eeprom->offset;
@@ -1341,8 +1597,7 @@ int al_mod_eth_lm_get_module_eeprom(struct al_mod_eth_lm_context *lm_context,
 		len -= first;
 		rc = lm_context->i2c_read_data(lm_context->i2c_context, lm_context->sfp_bus_id,
 					       SFP_I2C_ADDR, first, data, len,
-					       !test_bit(AL_MOD_SFP_QUIRK_NO_SEQ_READING,
-							 &lm_context->sfp_quirk_flags));
+					       lm_context->sfp_i2c_block_size);
 		if (rc)
 			return rc;
 
@@ -1355,8 +1610,7 @@ int al_mod_eth_lm_get_module_eeprom(struct al_mod_eth_lm_context *lm_context,
 		first -= ETH_MODULE_SFF_8079_LEN;
 		rc = lm_context->i2c_read_data(lm_context->i2c_context, lm_context->sfp_bus_id,
 					       SFP_I2C_ADDR_A2, first, data, len,
-					       !test_bit(AL_MOD_SFP_QUIRK_NO_SEQ_READING,
-							 &lm_context->sfp_quirk_flags));
+					       lm_context->sfp_i2c_block_size);
 		if (rc)
 			return rc;
 	}
@@ -1494,7 +1748,13 @@ int al_mod_eth_lm_init(struct al_mod_eth_lm_context	*lm_context,
 	mutex_init(&lm_context->lock);
 #endif
 	lm_context->sfp_has_phyreg = AL_FALSE;
+	lm_context->sfp_quirk = NULL;
 	lm_context->sfp_quirk_flags = 0;
+	lm_context->sfp_i2c_block_size = SFP_I2C_MAX_BLOCK_SIZE;
+	lm_context->sfp_enhanced_link_detection_default =
+		params->sfp_enhanced_link_detection;
+	lm_context->sfp_gpio_init = params->sfp_gpio_init;
+	lm_context->sfp_gpio_list = params->sfp_gpio_list;
 
 	return 0;
 }
@@ -2169,24 +2429,30 @@ int al_mod_eth_lm_link_check(struct al_mod_eth_lm_context *lm_context,
 	struct al_mod_eth_link_status status;
 	int rc;
 
-	rc = al_mod_eth_link_status_get(lm_context->adapter, &status);
+	rc = al_mod_eth_lm_link_status_get(lm_context, &status);
 	if (rc) {
 		al_mod_err("%s: Error getting link status from MAC\n", __func__);
 		return rc;
 	}
 
-	if (status.link_up)
+	if (!lm_context->sfp_enhanced_link_detection && status.link_up)
 		*link_state = AL_ETH_LM_LINK_UP;
 	else if (status.local_fault)
 		*link_state = AL_ETH_LM_LINK_DOWN;
 	else if (status.remote_fault)
 		*link_state = AL_ETH_LM_LINK_DOWN_RF;
+	else if (status.link_up)
+		*link_state = AL_ETH_LM_LINK_UP;
 	else {
-		al_mod_err("%s: Invalid link state!\n", __func__);
+		/**
+		 * SGMII mode doesn't support such thing as local/remote fault detection
+		 * thus this is completely VALID state. Set link_state to AL_ETH_LM_LINK_DOWN.
+		 */
+		*link_state = AL_ETH_LM_LINK_DOWN;
 		return -EIO;
 	}
 
-	al_mod_dbg("%s: link_state is %s\n", __func__,
+	lm_debug("%s: link_state is %s\n", __func__,
 		((*link_state == AL_ETH_LM_LINK_DOWN) ? "DOWN" :
 		((*link_state == AL_ETH_LM_LINK_DOWN_RF) ? "DOWN_RF" :
 		((*link_state == AL_ETH_LM_LINK_UP) ? "UP" : "UNKNOWN"))));

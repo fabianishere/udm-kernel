@@ -591,6 +591,13 @@ static int link_status_get(struct al_mod_eth_mac_obj *obj,
 
 		if ((reg & AL_BIT(5)) == 0)
 			status->link_up = AL_FALSE;
+
+		/*
+		 * There is no interframe signalization for SGMII.
+		 * Avoid using uninitialized values for local/remote fault.
+		 */
+		status->local_fault = AL_FALSE;
+		status->remote_fault = AL_FALSE;
 		break;
 
 	case AL_ETH_MAC_MODE_RGMII:
