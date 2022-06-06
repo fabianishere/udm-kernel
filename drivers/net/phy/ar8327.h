@@ -599,6 +599,53 @@ struct ar8327_data {
 	u32 port_isolation[AR8327_NUM_PORTS];
 };
 
+struct arl_table {
+	union {
+		struct {
+			uint8_t mac[6];  // : 48
+			uint32_t portmap    : 7;
+			uint32_t port_cross : 1;
+			uint32_t priority   : 3;
+			uint32_t svl        : 1;
+			uint32_t pri_en     : 1;
+			uint32_t mirror     : 1;
+			uint32_t drop       : 1;
+			uint32_t reserved0  : 1; /* ATU hash ? */
+			uint32_t status     : 4; /* h1-7: ~40s, hF: static, 0: none */
+			uint32_t leaky      : 1;
+			uint32_t rdr_to_cpu : 1;
+			uint32_t cpy_to_cpu : 1;
+			uint32_t reserved1  : 1;
+			uint32_t vid        : 12;
+			uint32_t white_list : 1;
+			/* reserved */
+		} __attribute__((packed));
+		uint32_t _w[3];
+	};
+} __attribute__((packed));
+
+struct atu_func_reg {
+	union {
+		struct {
+			uint32_t at_func        : 4;
+			uint32_t flush_static   : 1;
+			uint32_t atu_type       : 1;
+			uint32_t reserved0      : 2;
+			uint32_t port_num       : 4;
+			uint32_t at_full_vio    : 1;
+			uint32_t at_multi_en    : 1;
+			uint32_t at_port_en     : 1;
+			uint32_t at_vid_en      : 1;
+			uint32_t atu_index      : 5;
+			uint32_t reserved1      : 1;
+			uint32_t trunk_port     : 3;
+			uint32_t reserved2      : 6;
+			uint32_t busy           : 1;
+		} __attribute__((packed));
+		uint32_t _w;
+	};
+} __attribute__((packed));
+
 /* register functions */
 #define SW_BIT_MASK_U32(nr) (~(0xFFFFFFFF << (nr)))
 #define SW_FIELD_MASK_U32(offset, len) ((SW_BIT_MASK_U32(len) << (offset)))

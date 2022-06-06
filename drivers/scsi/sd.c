@@ -3435,10 +3435,23 @@ static int sd_probe(struct device *dev)
 		goto out_put;
 	}
 
-	error = sd_format_disk_name("sd", index, gd->disk_name, DISK_NAME_LEN);
-	if (error) {
-		sdev_printk(KERN_WARNING, sdp, "SCSI disk (sd) name length exceeded.\n");
-		goto out_free_index;
+#ifdef CONFIG_SCSI_UBNT_STATIC_BOOT_DEV
+	/*
+	 * Fix the disk name to "boot" if the host type is an usb storage and
+	 * the vendor name is "Generic " for Genesys GL3224E or "Generic-" for
+	 * Realtek RTS5315 (2nd source).
+	 */
+	if (strcmp(sdp->host->hostt->proc_name, "usb-storage") == 0 &&
+		strncmp(sdp->vendor, "Generic", 7) == 0) {
+		strcpy(gd->disk_name, "boot");
+	} else
+#endif
+	{
+		error = sd_format_disk_name("sd", index, gd->disk_name, DISK_NAME_LEN);
+		if (error) {
+			sdev_printk(KERN_WARNING, sdp, "SCSI disk (sd) name length exceeded.\n");
+			goto out_free_index;
+		}
 	}
 
 	sdkp->device = sdp;

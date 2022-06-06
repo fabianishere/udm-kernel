@@ -580,7 +580,7 @@ ar8216_mangle_rx(struct net_device *dev, struct sk_buff *skb)
 		return;
 
 	/* lookup port vid from local table, the switch passes an invalid vlan id */
-	vlan = priv->vlan_id[priv->pvid[port]];
+	vlan = priv->pvid[port];
 
 	buf[14 + 2] &= 0xf0;
 	buf[14 + 2] |= vlan >> 8;
@@ -682,7 +682,7 @@ ar8216_setup_port(struct ar8xxx_priv *priv, int port, u32 members)
 	u32 pvid;
 
 	if (priv->vlan) {
-		pvid = priv->vlan_id[priv->pvid[port]];
+		pvid = priv->pvid[port];
 		if (priv->vlan_tagged & (1 << port))
 			egress = AR8216_OUT_ADD_VLAN;
 		else
@@ -838,7 +838,7 @@ ar8236_setup_port(struct ar8xxx_priv *priv, int port, u32 members)
 	u32 pvid;
 
 	if (priv->vlan) {
-		pvid = priv->vlan_id[priv->pvid[port]];
+		pvid = priv->pvid[port];
 		if (priv->vlan_tagged & (1 << port))
 			egress = AR8216_OUT_ADD_VLAN;
 		else
@@ -988,6 +988,12 @@ ar8xxx_sw_set_pvid(struct switch_dev *dev, int port, int vlan)
 	    port < 0 || port >= AR8X16_MAX_PORTS)
 		return -EINVAL;
 
+	// clear previous Native VLAN if exist
+	if (priv->vt[priv->pvid[port]].untagged & (1 << port)) {
+		priv->vt[priv->pvid[port]].untagged &= ~(1 << port);
+		priv->vt[priv->pvid[port]].tagged |= (1 << port);
+	}
+
 	priv->pvid[port] = vlan;
 	return 0;
 }
@@ -1005,28 +1011,6 @@ ar8xxx_sw_get_pvid(struct switch_dev *dev, int port, int *vlan)
 }
 
 static int
-ar8xxx_sw_set_vid(struct switch_dev *dev, const struct switch_attr *attr,
-		  struct switch_val *val)
-{
-	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
-
-	if (val->port_vlan >= AR8X16_MAX_VLANS)
-		return -EINVAL;
-
-	priv->vlan_id[val->port_vlan] = val->value.i;
-	return 0;
-}
-
-static int
-ar8xxx_sw_get_vid(struct switch_dev *dev, const struct switch_attr *attr,
-		  struct switch_val *val)
-{
-	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
-	val->value.i = priv->vlan_id[val->port_vlan];
-	return 0;
-}
-
-static int
 ar8xxx_sw_set_ivl(struct switch_dev *dev, const struct switch_attr *attr,
 		  struct switch_val *val)
 {
@@ -1035,7 +1019,7 @@ ar8xxx_sw_set_ivl(struct switch_dev *dev, const struct switch_attr *attr,
 	if (val->port_vlan >= AR8X16_MAX_VLANS)
 		return -EINVAL;
 
-	priv->use_ivl[val->port_vlan] = val->value.i;
+	priv->vt[val->port_vlan].use_ivl = val->value.i;
 	return 0;
 }
 
@@ -1044,7 +1028,7 @@ ar8xxx_sw_get_ivl(struct switch_dev *dev, const struct switch_attr *attr,
 		  struct switch_val *val)
 {
 	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
-	val->value.i = priv->use_ivl[val->port_vlan];
+	val->value.i = priv->vt[val->port_vlan].use_ivl;
 	return 0;
 }
 
@@ -1068,7 +1052,7 @@ ar8xxx_sw_get_ports(struct switch_dev *dev, struct switch_val *val)
 	if (val->port_vlan >= AR8X16_MAX_VLANS)
 		return -EINVAL;
 
-	ports = priv->vlan_table[val->port_vlan];
+	ports = priv->vt[val->port_vlan].vlan_entry;
 	val->len = 0;
 	for (i = 0; i < dev->ports; i++) {
 		struct switch_port *p;
@@ -1090,29 +1074,21 @@ static int
 ar8xxx_sw_set_ports(struct switch_dev *dev, struct switch_val *val)
 {
 	struct ar8xxx_priv *priv = swdev_to_ar8xxx(dev);
-	u8 *vt = &priv->vlan_table[val->port_vlan];
-	int i, j;
+	int i;
 
-	*vt = 0;
 	for (i = 0; i < val->len; i++) {
 		struct switch_port *p = &val->value.ports[i];
 
 		if (p->flags & (1 << SWITCH_PORT_FLAG_TAGGED)) {
 			priv->vlan_tagged |= (1 << p->id);
+			priv->vt[val->port_vlan].tagged |= (1 << p->id);
+			priv->vt[val->port_vlan].untagged &= ~(1 << p->id);
 		} else {
 			priv->vlan_tagged &= ~(1 << p->id);
+			priv->vt[val->port_vlan].tagged &= ~(1 << p->id);
+			priv->vt[val->port_vlan].untagged |= (1 << p->id);
 			priv->pvid[p->id] = val->port_vlan;
-
-			/* make sure that an untagged port does not
-			 * appear in other vlans */
-			for (j = 0; j < AR8X16_MAX_VLANS; j++) {
-				if (j == val->port_vlan)
-					continue;
-				priv->vlan_table[j] &= ~(1 << p->id);
-			}
 		}
-
-		*vt |= 1 << p->id;
 	}
 	return 0;
 }
@@ -1185,7 +1161,7 @@ ar8xxx_sw_hw_apply(struct switch_dev *dev)
 		/* calculate the port destination masks and load vlans
 		 * into the vlan translation unit */
 		for (j = 0; j < AR8X16_MAX_VLANS; j++) {
-			u8 vp = priv->vlan_table[j];
+			u8 vp = priv->vt[j].tagged | priv->vt[j].untagged;
 
 			if (!vp)
 				continue;
@@ -1196,8 +1172,7 @@ ar8xxx_sw_hw_apply(struct switch_dev *dev)
 					portmask[i] |= vp & ~mask;
 			}
 
-			chip->vtu_load_vlan(priv, priv->vlan_id[j],
-					    priv->vlan_table[j]);
+			chip->vtu_load_vlan(priv, j, vp);
 		}
 	} else {
 		/* vlan disabled:
@@ -1236,9 +1211,6 @@ ar8xxx_sw_reset_switch(struct switch_dev *dev)
 	mutex_lock(&priv->reg_mutex);
 	memset(&priv->vlan, 0, sizeof(struct ar8xxx_priv) -
 		offsetof(struct ar8xxx_priv, vlan));
-
-	for (i = 0; i < AR8X16_MAX_VLANS; i++)
-		priv->vlan_id[i] = i;
 
 	/* Configure all ports */
 	for (i = 0; i < dev->ports; i++)
@@ -1731,14 +1703,6 @@ const struct switch_attr ar8xxx_sw_attr_port[] = {
 };
 
 const struct switch_attr ar8xxx_sw_attr_vlan[] = {
-	{
-		.type = SWITCH_TYPE_INT,
-		.name = "vid",
-		.description = "VLAN ID (0-4094)",
-		.set = ar8xxx_sw_set_vid,
-		.get = ar8xxx_sw_get_vid,
-		.max = 4094,
-	},
 	{
 		.type = SWITCH_TYPE_INT,
 		.name = "enable_ivl",

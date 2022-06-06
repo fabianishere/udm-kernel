@@ -42,16 +42,16 @@ static rtk_api_ret_t _rtk_igmp_init(void)
 
 	RTK_SCAN_ALL_PHY_PORTMASK(port)
 	{
-		if ((retVal = rtl8367c_setAsicIGMPv1Opeartion(port, PROTOCOL_OP_ASIC)) != RT_ERR_OK)
+		if ((retVal = rtl8367c_setAsicIGMPv1Opeartion(port, PROTOCOL_OP_DROP)) != RT_ERR_OK)
 			return retVal;
 
-		if ((retVal = rtl8367c_setAsicIGMPv2Opeartion(port, PROTOCOL_OP_ASIC)) != RT_ERR_OK)
+		if ((retVal = rtl8367c_setAsicIGMPv2Opeartion(port, PROTOCOL_OP_FLOOD)) != RT_ERR_OK)
 			return retVal;
 
 		if ((retVal = rtl8367c_setAsicIGMPv3Opeartion(port, PROTOCOL_OP_FLOOD)) != RT_ERR_OK)
 			return retVal;
 
-		if ((retVal = rtl8367c_setAsicMLDv1Opeartion(port, PROTOCOL_OP_ASIC)) != RT_ERR_OK)
+		if ((retVal = rtl8367c_setAsicMLDv1Opeartion(port, PROTOCOL_OP_FLOOD)) != RT_ERR_OK)
 			return retVal;
 
 		if ((retVal = rtl8367c_setAsicMLDv2Opeartion(port, PROTOCOL_OP_FLOOD)) != RT_ERR_OK)

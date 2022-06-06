@@ -656,6 +656,10 @@ struct al_mod_eth_adapter {
 	unsigned int			gpio_spd_10g;
 	unsigned int			gpio_spd_25g;
 	unsigned int			gpio_sfp_present;
+	/* enable enhanced SFP link detection */
+	bool				sfp_enhanced_link_detection;
+	al_mod_bool			sfp_gpio_init;
+	struct gpio_desc		*sfp_gpio_list[AL_ETH_GPIO_MAX];
 	al_mod_bool				kr_fec_enable;
 
 	struct 	work_struct 		reset_task;
