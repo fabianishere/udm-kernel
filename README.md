@@ -61,7 +61,7 @@ and think about how it might be useful for other users as well.
 Make sure you have the following packages installed:
 
 ```bash
-apt install build-dep libncurses-dev gawk flex bison openssl libssl-dev gcc-aarch64-linux-gnu
+apt install build-dep libncurses5-dev gawk flex bison openssl libssl-dev # gcc-aarch64-linux-gnu [needs replaced]
 ```
 
 It might be that case that more recent versions of GCC have difficulty compiling
@@ -87,7 +87,7 @@ If you wish to graphically configure the kernel options, pass the `-m` flag:
 ```bash
 .github/prepare.sh -m
 ```
-Make sure `CONFIG_MODULE_FORCE_LOAD` is always enabled, in order for the kernel
+Make sure `CONFIG_MODULE_FORCE_LOAD` is always enabled, in order for the kernel [enabled by default]
 to boot properly.
 
 Once the kernel is configured, build the kernel as follows:
