@@ -103,15 +103,32 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __AL_INIT_ETH_LM_H__
 
 #include <linux/sfp.h>
+#include <linux/gpio.h>
+#include <linux/gpio/consumer.h>
 
 #include "al_mod_serdes.h"
 #include "al_mod_hal_eth.h"
 #include "al_mod_init_eth_kr.h"
 #include "al_mod_eth_lm_retimer.h"
 
-#define SFP_I2C_ADDR			(0xA0 >> 1)
+#define SFP_I2C_ADDR				(0xA0 >> 1)
 #define SFP_I2C_ADDR_A2			(0xA2 >> 1)
-#define SFP_I2C_ADDR_PHY		(0xAC >> 1)
+#define SFP_I2C_ADDR_PHY			(0xAC >> 1)
+#define SFP_I2C_MAX_BLOCK_SIZE 		(16)
+
+/* Similar to GPIO enum in drivers/net/phy/sfp.c */
+enum al_mod_sfp_gpio {
+	AL_ETH_GPIO_MODDEF0 = 0,/* GPIO_OPTDET_N */
+	AL_ETH_GPIO_LOS,	/* GPIO_OPRX_LOS */
+	AL_ETH_GPIO_TX_FAULT,	/* GPIO_OPTX_FAULT */
+	AL_ETH_GPIO_TX_DISABLE,	/* GPIO_OPTX_DIS */
+	AL_ETH_GPIO_MAX,
+
+	SFP_F_PRESENT = BIT(AL_ETH_GPIO_MODDEF0),
+	SFP_F_LOS = BIT(AL_ETH_GPIO_LOS),
+	SFP_F_TX_FAULT = BIT(AL_ETH_GPIO_TX_FAULT),
+	SFP_F_TX_DISABLE = BIT(AL_ETH_GPIO_TX_DISABLE),
+};
 
 enum al_mod_eth_lm_link_mode {
 	AL_ETH_LM_MODE_DISCONNECTED,
@@ -164,42 +181,6 @@ enum al_mod_eth_lm_sfp_probe_type {
 	AL_ETH_LM_SFP_PROBE_10G,
 };
 
-/**
- * @brief List of quirks
- */
-enum al_mod_sfp_quirks_e {
-	/* module does not support sequential reading */
-	AL_MOD_SFP_QUIRK_NO_SEQ_READING = 0,
-	/* limit access to module's EEPROM */
-	AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS,
-	/* skip PHY detection */
-	AL_MOD_SFP_QUIRK_NO_PHY_DETECTION,
-	AL_MOD_SFP_QUIRK_COUNT
-};
-
-struct al_mod_sfp_fixup_entry {
-	const char *pn;
-	const unsigned long sfp_quirk_flags;
-	const int delay_init_s;
-};
-
-/**
- * @brief List of modules with quirks
- *
- * UF-INSTANT - doesn't support sequential reading
- * Alcatel 3FE46541AA & Huawei MA5671A & Alcatel Lucent G-010S-P - periodic reading of eeprom leads to jamming i2c bus
- * VSOL 1GE (SFP) ONU - doesn't support sequential reading
- *
- * X (product number, quirk flags, number of seconds to delay SFP initialization)
- */
-#define AL_MOD_SFP_FIXUP_LIST(X) \
-	X("MA5671A",		BIT(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS),	10) \
-	X("3FE46541AA",		BIT(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS),	10) \
-	X("G010SP", 		BIT(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS),	10) \
-	X("UF-INSTANT",		BIT(AL_MOD_SFP_QUIRK_NO_SEQ_READING),	0)  \
-	X("V2801F",			BIT(AL_MOD_SFP_QUIRK_NO_SEQ_READING),	0)  \
-	X("UC-DAC-SFP+",	BIT(AL_MOD_SFP_QUIRK_NO_PHY_DETECTION),	0)
-
 struct al_mod_eth_lm_step_retimer_data {
 	int		rx_adap_state;
 	int		slc_state;
@@ -229,6 +210,44 @@ struct al_mod_eth_lm_link_config {
 	/* autoneg */
 	al_mod_bool	autoneg;
 };
+
+/**
+ * @brief List of quirks
+ */
+enum al_mod_sfp_quirks_e {
+	/* limit access to module's EEPROM */
+	AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS = 0,
+	/* use enhanced GPIO detection */
+	AL_MOD_SFP_QUIRK_ENHANCED_LINK_DETECTION,
+	AL_MOD_SFP_QUIRK_COUNT
+};
+
+struct al_mod_sfp_quirk_entry {
+	const char *pn;
+	const unsigned long flags;
+	const int delay_init_ms;
+};
+
+/**
+ * @brief List of modules with quirks
+ *
+ * - periodic reading of eeprom leads to jamming i2c bus :
+ * 	- Alcatel 3FE46541AA
+ * 	- Huawei MA5671A
+ * 	- Alcatel Lucent G-010S-P
+ * 	- 10Gtek SFP-10G-SR
+ * 	- Cisco SFP-10G-SR
+ * - needs more time to initialize (~1s) : UF-RJ45-1G
+ * X (product number, quirk flags, number of seconds to delay SFP initialization)
+ */
+#define AL_MOD_SFP_FIXUP_LIST(X)                                              \
+	X("MA5671A",		BIT(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS),	10000)        \
+	X("3FE46541AA",		BIT(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS),	10000)        \
+	X("G010SP", 		BIT(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS),	10000)        \
+	X("SFP-SR-10GB", 	BIT(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS),	0)            \
+	X("SFP-10G-SR", 	BIT(AL_MOD_SFP_QUIRK_NO_EEPROM_ACCESS),	0)            \
+	X("UF-RJ45-1G", 	BIT(AL_MOD_SFP_QUIRK_ENHANCED_LINK_DETECTION),	1000) \
+	X("S+RJ10", 		BIT(AL_MOD_SFP_QUIRK_ENHANCED_LINK_DETECTION),	0)
 
 struct al_mod_eth_lm_context {
 	struct al_mod_hal_eth_adapter	*adapter;
@@ -281,11 +300,11 @@ struct al_mod_eth_lm_context {
 
 	/* services */
 	int (*i2c_read_data)(void *handle, uint8_t bus_id, uint8_t i2c_addr,
-			uint8_t reg_addr, uint8_t *val, size_t len, al_mod_bool seq);
+			uint8_t reg_addr, uint8_t *val, size_t len, size_t block_size);
 	int (*i2c_read)(void *handle, uint8_t bus_id, uint8_t i2c_addr,
 			uint8_t reg_addr, uint8_t *val);
 	int (*i2c_write_data)(void *handle, uint8_t bus_id, uint8_t i2c_addr,
-			 uint8_t reg_addr, uint8_t *val, size_t len, al_mod_bool seq);
+			 uint8_t reg_addr, uint8_t *val, size_t len, size_t block_size);
 	int (*i2c_write)(void *handle, uint8_t bus_id, uint8_t i2c_addr,
 			 uint8_t reg_addr, uint8_t val);
 	void				*i2c_context;
@@ -293,6 +312,11 @@ struct al_mod_eth_lm_context {
 
 	int (*gpio_get)(unsigned int gpio);
 	uint32_t			gpio_present;
+	al_mod_bool			sfp_enhanced_link_detection_default;
+	al_mod_bool			sfp_enhanced_link_detection; /* enable enhanced SFP detection */
+	al_mod_bool			sfp_gpio_init;
+	struct gpio_desc		**sfp_gpio_list;
+	unsigned			sfp_gpio_state;
 
 	enum al_mod_eth_retimer_channel	retimer_tx_channel;
 	al_mod_bool				retimer_configured;
@@ -337,11 +361,15 @@ struct al_mod_eth_lm_context {
 	/* desired link configuration */
 	struct al_mod_eth_lm_link_config	link_conf;
 	/* Allows to apply a special treatment for SFP module */
+	const struct al_mod_sfp_quirk_entry *sfp_quirk;
 	unsigned long sfp_quirk_flags;
 	/* SFP A0 */
 	struct sfp_eeprom_id sfp_id;
+	size_t sfp_i2c_block_size;
+	al_mod_bool sfp_id_valid;
 	/* lm context lock */
 	struct mutex  lock;
+	unsigned long RJ45_10G_jiffies;
 };
 
 struct al_mod_eth_lm_init_params {
@@ -402,11 +430,11 @@ struct al_mod_eth_lm_init_params {
 	 * in case no eeprom is connected should return -ETIMEDOUT
 	 */
 	int (*i2c_read_data)(void *handle, uint8_t bus_id, uint8_t i2c_addr,
-			uint8_t reg_addr, uint8_t *val, size_t len, al_mod_bool seq);
+			uint8_t reg_addr, uint8_t *val, size_t len, size_t block_size);
 	int (*i2c_read)(void *handle, uint8_t bus_id, uint8_t i2c_addr,
 			uint8_t reg_addr, uint8_t *val);
 	int (*i2c_write_data)(void *handle, uint8_t bus_id, uint8_t i2c_addr,
-			 uint8_t reg_addr, uint8_t *val, size_t len, al_mod_bool seq);
+			 uint8_t reg_addr, uint8_t *val, size_t len, size_t block_size);
 	int (*i2c_write)(void *handle, uint8_t bus_id, uint8_t i2c_addr,
 			 uint8_t reg_addr, uint8_t val);
 	void				*i2c_context;
@@ -452,6 +480,10 @@ struct al_mod_eth_lm_init_params {
 	unsigned int			auto_fec_initial_timeout;
 	/* Toggle timeout (in msec) to wait before toggling FEC state */
 	unsigned int			auto_fec_toggle_timeout;
+	/* enable enhanced SFP detection */
+	al_mod_bool			sfp_enhanced_link_detection;
+	al_mod_bool			sfp_gpio_init;
+	struct gpio_desc 		**sfp_gpio_list;
 };
 
 /**

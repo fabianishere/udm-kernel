@@ -1175,6 +1175,13 @@ static int link_status_get(struct al_mod_eth_mac_obj *obj,
 
 		if ((reg & AL_BIT(5)) == 0)
 			status->link_up = AL_FALSE;
+		/*
+		 * There is no interframe signalization for SGMII.
+		 * Avoid using uninitialized values for local/remote fault.
+		 */
+		status->local_fault = AL_FALSE;
+		status->remote_fault = AL_FALSE;
+
 		break;
 
 	case AL_ETH_MAC_MODE_XLG_LL_25G:
@@ -1494,6 +1501,18 @@ static void iofic_attrs_get_non_fatal(struct al_mod_eth_mac_obj *obj __attribute
 	*mac_d_mask = 0;
 }
 
+static int check_10g_base_kr(struct al_mod_eth_mac_obj *obj)
+{
+	struct al_mod_eth_mac_regs *mac_reg = obj->mac_regs_base;
+	uint32_t reg;
+
+	al_mod_reg_write32(&mac_reg->kr.pcs_addr, ETH_MAC_KR_PCS_BASE_R_STATUS2);
+	reg = al_mod_reg_read32(&mac_reg->kr.pcs_data);
+	if (reg & AL_BIT(15))
+		return 1;
+	return 0;
+}
+
 int al_mod_eth_mac_v3_handle_init(struct al_mod_eth_mac_obj *obj,
 	__attribute__((unused)) struct al_mod_eth_mac_obj_init_params *params)
 {
@@ -1524,6 +1543,7 @@ int al_mod_eth_mac_v3_handle_init(struct al_mod_eth_mac_obj *obj,
 	obj->iofic_attrs_get_transient = iofic_attrs_get_transient;
 	obj->iofic_attrs_get_non_fatal = iofic_attrs_get_non_fatal;
 	obj->mac_start_stop_adv = mac_start_stop_adv;
+	obj->check_10g_base_kr = check_10g_base_kr;
 
 	return 0;
 }

@@ -334,15 +334,7 @@ static const char *acl_parse_mac(const char *rule, u8 mac[6])
 	return rule;
 }
 
-/**
- * @brief Parse the HEX/DEC value and store result in `value`.
- *
- * @param rule - value to be parsed, value starting with `0x` considered HEX.
- * @param value - stored result.
- * @return char* - string after value or NULL on error.
- * @note single quote tolerant.
- */
-static const char *acl_parse_value(const char *rule, uint16_t *value)
+const char *acl_parse_value(const char *rule, uint16_t *value)
 {
 	while (isblank(*rule) || *rule == '\'')
 		rule++;
@@ -359,15 +351,7 @@ static const char *acl_parse_value(const char *rule, uint16_t *value)
 	return rule;
 }
 
-/**
- * @brief Parse the bit tuple and store result in as bitmask in `mask`.
- *
- * @param rule - value to be parsed.
- * @param mask - stored result.
- * @return char* - string after value or NULL on error.
- * @note single quote tolerant.
- */
-static const char *acl_parse_bitmask(const char *rule, u32 *mask)
+const char *acl_parse_bitmask(const char *rule, u32 *mask)
 {
 	u32 value;
 
@@ -622,6 +606,10 @@ int ubnt_acl_get_acl_table(struct acl_hw *hw)
 							continue;
 						}
 						BUF_APPEND_PRINTF("%d ", i);
+					}
+
+					if (entry->vlan_dst) {
+						BUF_APPEND_PRINTF("\nVLAN_DST %d\n", entry->vlan_dst);
 					}
 					break;
 				case ACL_RULE_VLAN_ASSIGNMENT:

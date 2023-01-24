@@ -33,6 +33,8 @@ struct udp_port_cfg {
 	unsigned int		use_udp_checksums:1,
 				use_udp6_tx_checksums:1,
 				use_udp6_rx_checksums:1,
+				reuse_addr:1,
+				reuse_port:1,
 				ipv6_v6only:1;
 };
 

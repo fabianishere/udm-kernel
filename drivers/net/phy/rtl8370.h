@@ -138,8 +138,12 @@ typedef enum _port_mapping {
 #define RTL8370_DEFAULT_PRIORITY (0)
 #define RTL8370_NUM_ACL_ENTRIES	(96)
 #define RTL8370_ARL_AGE_TIME_MAX_S (458)
-#define RTL8370_ARL_AGE_TIME_DEFAULT_S (300)
 
+#ifdef CONFIG_SWCONFIG_UBNT_EXT_SYNC_ARL
+#define RTL8370_ARL_AGE_TIME_DEFAULT_S (260)
+#else
+#define RTL8370_ARL_AGE_TIME_DEFAULT_S (300)
+#endif
 typedef rtk_uint32 rtl_arl_iter_t;
 
 typedef union {
@@ -188,7 +192,13 @@ struct rtl8370_port_mapping {
 };
 
 struct rtl8370_vlan_entry {
-	uint16_t members;
+	union {
+		struct {
+			uint16_t tagged;
+			uint16_t untagged;
+		} __packed;
+		uint32_t members;
+	};
 	uint8_t fid;
 	bool ivl_enabled;
 };
@@ -208,13 +218,13 @@ struct rtl8370_priv {
 	uint8_t  efid_table[RTL8370_PORT_MAX_PHY];
 	struct rtl8370_vlan_entry vlan_table[RTL8370_NUM_VIDS];
 	struct rtl8370_svlan_table svlan_table;
-	uint16_t pvid_tagged;
 	uint16_t pvid_table[RTL8370_PORT_MAX_PHY];
 	/* array of port isolation masks */
 	rtk_portmask_t port_isolation[RTL8370_PORT_MAX_PHY];
 	struct rtl8370_mac_mode mac_mode[RTL8370_PORT_MAX_CPU];
 	const struct rtl8370_port_mapping *port_map;
 	int reset_pin;
+	int igmp_snooping;
 };
 
 #define RTL8370_INTERPRET_API_ERRORS

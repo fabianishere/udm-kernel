@@ -40,6 +40,17 @@ struct switch_dev;
 struct switch_attr;
 struct switch_val;
 
+#ifdef CONFIG_SWCONFIG_UBNT_EXT_SYNC_ARL
+/**
+ * @brief the state after cache sync with switch chip
+ */
+enum uext_arl_cache_sync_state {
+        UEXT_ARL_CACHE_NOT_FOUND,
+        UEXT_ARL_CACHE_ALIVE,
+        UEXT_ARL_CACHE_DELETABLE
+};
+#endif
+
 /**
  * @brief Iterator initialization
  */
@@ -77,6 +88,9 @@ struct uext_arl_cache_entry {
 	struct uext_arl_lut_entry lut_e;
 	unsigned long last_seen;
 	unsigned long first_add;
+#ifdef CONFIG_SWCONFIG_UBNT_EXT_SYNC_ARL
+	unsigned int flag;
+#endif
 	struct list_head list;
 };
 

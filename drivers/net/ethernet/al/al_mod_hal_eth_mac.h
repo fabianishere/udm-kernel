@@ -930,6 +930,14 @@ struct al_mod_eth_mac_obj {
 					 al_mod_bool rx,
 					 al_mod_bool tx_start,
 					 al_mod_bool rx_start);
+
+	/**
+	 * check if 10GBase-KR is live and kicking.
+	 * @param adapter pointer to the private structure.
+	 *
+	 * @return false if cannot detect 10GBase-KR medium is set. true otherwise
+	 */
+	int (*check_10g_base_kr)(struct al_mod_eth_mac_obj *obj);
 };
 
 /** Ethernet MAC handle initialization parameters */

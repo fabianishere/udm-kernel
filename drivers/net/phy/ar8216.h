@@ -36,8 +36,12 @@
 #define AR8X16_MAX_PORTS	8
 
 #define AR8XXX_REG_ARL_CTRL_AGE_TIME_SECS	7
-#define AR8XXX_DEFAULT_ARL_AGE_TIME		300
 
+#ifdef CONFIG_SWCONFIG_UBNT_EXT_SYNC_ARL
+#define AR8XXX_DEFAULT_ARL_AGE_TIME		260
+#else
+#define AR8XXX_DEFAULT_ARL_AGE_TIME		300
+#endif
 /* Atheros specific MII registers */
 #define MII_ATH_MMD_ADDR		0x0d
 #define MII_ATH_MMD_DATA		0x0e
@@ -420,7 +424,7 @@ struct ar8xxx_chip {
 	void (*get_arl_entry)(struct ar8xxx_priv *priv, struct arl_entry *a,
 			      u32 *status, enum arl_op op);
 	int (*sw_hw_apply)(struct switch_dev *dev);
-	void (*phy_rgmii_set)(struct ar8xxx_priv *priv, struct phy_device *phydev);	
+	void (*phy_rgmii_set)(struct ar8xxx_priv *priv, struct phy_device *phydev);
 	int (*phyaddr_to_portno)(int phy_addr);
 	int (*portno_to_phyno)(int portno);
 
@@ -485,12 +489,24 @@ struct ar8xxx_priv {
 	unsigned int use_count;
 
 	/* all fields below are cleared on reset */
+	/* vlan: per port mask. port bit set ? SECURE MODE : PORT MODE */
 	uint32_t vlan;
-	u16 vlan_id[AR8X16_MAX_VLANS];
-	u8 vlan_table[AR8X16_MAX_VLANS];
-	u8 use_ivl[AR8X16_MAX_VLANS]; /* independent VLAN learning */
+	/* vlan_tagged: per port mask. port bit set ? SECURE MODE : PORT MODE */
 	u8 vlan_tagged;
+	/* pvid: native VLANs per port */
 	u16 pvid[AR8X16_MAX_PORTS];
+	struct VLAN_table {
+		union {
+			struct {
+				/* tagged: port mask for tagged egress */
+				u8 tagged;
+				/* untagged: port mask for untagged egress */
+				u8 untagged;
+			} __packed;
+			u16 vlan_entry;
+		};
+		u8 use_ivl;
+	} vt[AR8X16_MAX_VLANS];
 	int arl_age_time;
 
 	/* mirroring */
